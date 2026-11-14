@@ -23,7 +23,7 @@ diff --git a/bsd/dev/herolte_bt.c b/bsd/dev/herolte_bt.c
 new file mode 100644
 --- /dev/null
 +++ b/bsd/dev/herolte_bt.c
-@@ -0,0 +1,213 @@
+@@ -0,0 +1,237 @@
 +/*
 + * Experimental Galaxy S7 / Exynos8890 BCM4359 HCI UART bring-up.
 + * Built into XNU; NOT a full IOBluetooth driver.  Default is OFF.
@@ -52,6 +52,8 @@ new file mode 100644
 +#define HBT_FSYS0_PA    0x10e60000u
 +#define HBT_PERIC1_PA   0x14cc0000u
 +#define HBT_UART_PA     0x14c20000u
++/* Exynos8890 CMU_PERIC1; upstream Linux clk-exynos8890.c. No writes here. */
++#define HBT_CMU_PERIC1_PA 0x14c80000u
 +/* Linux exynos8890 pinctrl bank offsets */
 +#define HBT_GPA2       0x040u /* GPA2.3 host-wake input */
 +#define HBT_GPI2       0x020u /* GPI2.3 BT_WAKE output */
@@ -173,9 +175,10 @@ new file mode 100644
 +    vm_offset_t fsys0 = ml_io_map(HBT_FSYS0_PA, 0x1000);
 +    vm_offset_t peric1 = ml_io_map(HBT_PERIC1_PA, 0x1000);
 +    vm_offset_t uart = ml_io_map(HBT_UART_PA, 0x1000);
-+    if (!alive || !fsys0 || !peric1 || !uart) {
-+        printf("HEROLTE BT: MMIO map FAILED alive=%d fsys0=%d peric1=%d uart=%d\n",
-+            alive != 0, fsys0 != 0, peric1 != 0, uart != 0);
++    vm_offset_t cmu = ml_io_map(HBT_CMU_PERIC1_PA, 0x3000);
++    if (!alive || !fsys0 || !peric1 || !uart || !cmu) {
++        printf("HEROLTE BT: MMIO map FAILED alive=%d fsys0=%d peric1=%d uart=%d cmu=%d\n",
++            alive != 0, fsys0 != 0, peric1 != 0, uart != 0, cmu != 0);
 +        return;
 +    }
 +    /* UART1 clock gate may be off: read-only mode is NOT guaranteed safe. */
@@ -191,8 +194,29 @@ new file mode 100644
 +        hbt_rd(fsys0, HBT_GPI2 + HBT_CON), hbt_rd(fsys0, HBT_GPI2 + HBT_DAT),
 +        hbt_rd(alive, HBT_GPA2 + HBT_CON), hbt_rd(alive, HBT_GPA2 + HBT_DAT));
 +
++    /* On the tested BOOT, ULCON=0 and DIV=0. Never presume UART1 is ready. */
++    uint32_t cmu_mux = hbt_rd(cmu, 0x0224);
++    uint32_t cmu_mux_stat = hbt_rd(cmu, 0x0624);
++    uint32_t cmu_pclk = hbt_rd(cmu, 0x0800);
++    uint32_t cmu_sclk = hbt_rd(cmu, 0x0860);
++    uint32_t cmu_man_pclk = hbt_rd(cmu, 0x1800);
++    uint32_t cmu_man_sclk = hbt_rd(cmu, 0x1860);
++    uint32_t cmu_stat_sclk = hbt_rd(cmu, 0x1c60);
++    uint32_t cmu_qstate = hbt_rd(cmu, 0x2424);
++    printf("HEROLTE BT: CMU_PERIC1 UART1 mux=%#x stat=%#x pclk=%#x sclk=%#x man_pclk=%#x man_sclk=%#x\n",
++        cmu_mux, cmu_mux_stat, cmu_pclk, cmu_sclk, cmu_man_pclk, cmu_man_sclk);
++    printf("HEROLTE BT: clock state sclk_stat=%#x uart1_qstate=%#x pclk13=%u sclk0=%u; read-only snapshot\n",
++        cmu_stat_sclk, cmu_qstate, !!(cmu_pclk & (1U << 13)), !!(cmu_sclk & 1U));
 +    if (mode == 1) {
 +        printf("HEROLTE BT: snapshot complete; no writes\n");
++        return;
++    }
++    /* Avoid pinmux/power writes before clock and 8-bit UART setup is confirmed.
++     * In particular, the existing mode=2 code is not safe with ULCON=0. */
++    if (!(cmu_pclk & (1U << 13)) || !(cmu_sclk & 1U) ||
++        (ulcon & 0x3u) != 0x3u || (ucon & 0xfu) != 0x5u ||
++        divider == 0) {
++        printf("HEROLTE BT: ACTIVE PROBE BLOCKED: UART1 clocks/8N1/mode/divisor not ready\n");
 +        return;
 +    }
 +    /* If the UART register block appears inaccessible, do not send anything. */
