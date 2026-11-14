@@ -1,0 +1,238 @@
+diff --git a/bsd/conf/files b/bsd/conf/files
+index 1111111..2222222 100644
+@@ -114,2 +114,3 @@
+ bsd/dev/herolte_wifi.c			standard
++bsd/dev/herolte_bt.c			standard
+ bsd/dev/sweet_sta.c			standard
+diff --git a/bsd/dev/herolte_gpu.c b/bsd/dev/herolte_gpu.c
+index 1111111..2222222 100644
+@@ -3423,2 +3423,12 @@
+ 	PE_parse_boot_argn("herowifi", &wifi, sizeof(wifi));
++	/* 0335: optional Bluetooth hardware probe; herobt=0 (default) is fully inert. */
++	int herobt = 0;
++	PE_parse_boot_argn("herobt", &herobt, sizeof(herobt));
++	if (herobt == 1 || herobt == 2) {
++		extern void herolte_bt_probe_thread(void *, wait_result_t);
++		if (kernel_thread_start(herolte_bt_probe_thread, (void *)(uintptr_t)herobt,
++		    &thread) == KERN_SUCCESS) {
++			thread_deallocate(thread);
++		}
++	}
+ 	if (wifi &&
+diff --git a/bsd/dev/herolte_bt.c b/bsd/dev/herolte_bt.c
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/herolte_bt.c
+@@ -0,0 +1,212 @@
++/*
++ * Experimental Galaxy S7 / Exynos8890 BCM4359 HCI UART bring-up.
++ * Built into XNU; NOT a full IOBluetooth driver.  Default is OFF.
++ *  herobt=0: off (default); no mappings, no writes.
++ *  herobt=1: read-only MMIO snapshot (CAUTION: inactive clocks may still fault).
++ *  herobt=2: EXPERIMENTAL: GPIO power, UART H4 Reset / Read Version;
++ *            requires active UART1 clock and a valid existing baud setup.
++ *            Never run without a verified BOOT backup / recovery path.
++ * The UART clock GATE and divisor are NOT set here; if gated or incorrectly
++ * configured, the probe will print an error or may hang on MMIO.  Hardware
++ * responses are NOT evidence that the iOS Bluetooth stack works.
++ * Reference: Samsung kernel drivers/bluetooth/bcm4359.c, Exynos8890 pinctrl.
++ */
++#if defined(ARM64_BOARD_CONFIG_HEROLTE)
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <kern/thread.h>
++#include <machine/machine_routines.h>
++#include <pexpert/pexpert.h>
++
++extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
++extern void IOSleep(unsigned milliseconds);
++
++#define HBT_ALIVE_PA    0x10580000u
++#define HBT_FSYS0_PA    0x10e60000u
++#define HBT_PERIC1_PA   0x14cc0000u
++#define HBT_UART_PA     0x14c20000u
++/* Linux exynos8890 pinctrl bank offsets */
++#define HBT_GPA2       0x040u /* GPA2.3 host-wake input */
++#define HBT_GPI2       0x020u /* GPI2.3 BT_WAKE output */
++#define HBT_GPJ1       0x060u /* GPJ1.7 BT_EN output */
++#define HBT_GPE0       0x000u /* GPE0.0..3 UART1 mux */
++#define HBT_CON        0x00u
++#define HBT_DAT        0x04u
++#define HBT_PUD        0x08u
++/* Samsung S3C24xx UART registers; Exynos uses the same layout */
++#define HBT_ULCON      0x00u
++#define HBT_UCON       0x04u
++#define HBT_UFCON      0x08u
++#define HBT_UMCON      0x0cu
++#define HBT_UTRSTAT    0x10u
++#define HBT_UERSTAT    0x14u
++#define HBT_UFSTAT     0x18u
++#define HBT_UMSTAT     0x1cu
++#define HBT_UTXH       0x20u
++#define HBT_URXH       0x24u
++#define HBT_UBRDIV     0x28u
++#define HBT_UDIVSLOT   0x2cu
++#define HBT_RX_READY   0x01u
++#define HBT_TX_READY   0x02u /* UTRSTAT TX buffer empty */
++
++static uint32_t
++hbt_rd(vm_offset_t base, uint32_t offset)
++{
++    uint32_t v = *(volatile uint32_t *)(base + offset);
++    __asm__ volatile("dsb osh" ::: "memory");
++    return v;
++}
++static void
++hbt_wr(vm_offset_t base, uint32_t offset, uint32_t v)
++{
++    *(volatile uint32_t *)(base + offset) = v;
++    __asm__ volatile("dsb osh" ::: "memory");
++}
++static void
++hbt_gpio_function(vm_offset_t gpio, uint32_t bank, unsigned pin, unsigned func)
++{
++    uint32_t offset = bank + HBT_CON, shift = pin * 4;
++    uint32_t value = hbt_rd(gpio, offset);
++    hbt_wr(gpio, offset, (value & ~(15u << shift)) | ((func & 15u) << shift));
++}
++static void
++hbt_gpio_level(vm_offset_t gpio, uint32_t bank, unsigned pin, int level)
++{
++    uint32_t offset = bank + HBT_DAT, value = hbt_rd(gpio, offset);
++    hbt_wr(gpio, offset, level ? value | (1u << pin) : value & ~(1u << pin));
++}
++static int
++hbt_uart_write(vm_offset_t uart, uint8_t byte)
++{
++    /* <= 100 ms bounded polling, no infinite loops */
++    for (unsigned n = 0; n < 1000; n++) {
++        if (hbt_rd(uart, HBT_UTRSTAT) & HBT_TX_READY) {
++            hbt_wr(uart, HBT_UTXH, byte);
++            return 1;
++        }
++        delay(100);
++    }
++    return 0;
++}
++static int
++hbt_uart_read(vm_offset_t uart, uint8_t *byte)
++{
++    for (unsigned n = 0; n < 2000; n++) {
++        if (hbt_rd(uart, HBT_UTRSTAT) & HBT_RX_READY) {
++            *byte = (uint8_t)hbt_rd(uart, HBT_URXH);
++            return 1;
++        }
++        delay(100);
++    }
++    return 0;
++}
++static int
++hbt_hci_command(vm_offset_t uart, uint16_t opcode, uint8_t *out, unsigned *out_size)
++{
++    /* H:4 type 01, HCI command opcode little endian, zero params. */
++    uint8_t cmd[4] = {1, (uint8_t)opcode, (uint8_t)(opcode >> 8), 0};
++    for (unsigned i = 0; i < sizeof(cmd); i++) {
++        if (!hbt_uart_write(uart, cmd[i])) return -1;
++    }
++    /* Bounded event loop. Ignore unrelated events. */
++    for (unsigned event = 0; event < 8; event++) {
++        uint8_t type, event_code, len;
++        if (!hbt_uart_read(uart, &type) || !hbt_uart_read(uart, &event_code) ||
++            !hbt_uart_read(uart, &len)) return -2;
++        if (type != 4) return -3;
++        uint8_t buf[255];
++        for (unsigned i = 0; i < len; i++) {
++            if (!hbt_uart_read(uart, &buf[i])) return -2;
++        }
++        if (event_code == 0x0e && len >= 4 &&
++            buf[1] == (uint8_t)opcode && buf[2] == (uint8_t)(opcode >> 8)) {
++            *out_size = len;
++            for (unsigned i = 0; i < len; i++) out[i] = buf[i];
++            return buf[3] == 0 ? 0 : -4;
++        }
++        if (event_code == 0x0f && len >= 4 &&
++            buf[2] == (uint8_t)opcode && buf[3] == (uint8_t)(opcode >> 8)) {
++            *out_size = len;
++            for (unsigned i = 0; i < len; i++) out[i] = buf[i];
++            return buf[0] == 0 ? 0 : -4;
++        }
++    }
++    return -5;
++}
++
++/* kernel_thread_start callback, only invoked for boot arg herobt=1 or 2. */
++void
++herolte_bt_probe_thread(void *mode_ptr, __unused wait_result_t wr)
++{
++    unsigned mode = (unsigned)(uintptr_t)mode_ptr;
++    if (mode < 1 || mode > 2) return;
++
++    /* Do not touch peripheral MMIO at all when disabled. */
++    vm_offset_t alive = ml_io_map(HBT_ALIVE_PA, 0x1000);
++    vm_offset_t fsys0 = ml_io_map(HBT_FSYS0_PA, 0x1000);
++    vm_offset_t peric1 = ml_io_map(HBT_PERIC1_PA, 0x1000);
++    vm_offset_t uart = ml_io_map(HBT_UART_PA, 0x1000);
++    if (!alive || !fsys0 || !peric1 || !uart) {
++        printf("HEROLTE BT: MMIO map FAILED alive=%d fsys0=%d peric1=%d uart=%d\n",
++            alive != 0, fsys0 != 0, peric1 != 0, uart != 0);
++        return;
++    }
++    /* UART1 clock gate may be off: read-only mode is NOT guaranteed safe. */
++    uint32_t ulcon = hbt_rd(uart, HBT_ULCON);
++    uint32_t ucon = hbt_rd(uart, HBT_UCON);
++    uint32_t uart_status = hbt_rd(uart, HBT_UTRSTAT);
++    uint32_t divider = hbt_rd(uart, HBT_UBRDIV);
++    uint32_t slot = hbt_rd(uart, HBT_UDIVSLOT);
++    printf("HEROLTE BT: mode=%u UART1 0x%08x ULCON=%#x UCON=%#x UTRSTAT=%#x DIV=%#x SLOT=%#x\n",
++         mode, HBT_UART_PA, ulcon, ucon, uart_status, divider, slot);
++    printf("HEROLTE BT: GPIO GPJ1_7 cfg=%#x dat=%#x; GPI2_3 cfg=%#x dat=%#x; GPA2_3 cfg=%#x dat=%#x\n",
++        hbt_rd(peric1, HBT_GPJ1 + HBT_CON), hbt_rd(peric1, HBT_GPJ1 + HBT_DAT),
++        hbt_rd(fsys0, HBT_GPI2 + HBT_CON), hbt_rd(fsys0, HBT_GPI2 + HBT_DAT),
++        hbt_rd(alive, HBT_GPA2 + HBT_CON), hbt_rd(alive, HBT_GPA2 + HBT_DAT));
++
++    if (mode == 1) {
++        printf("HEROLTE BT: snapshot complete; no writes\n");
++        return;
++    }
++    /* If the UART register block appears inaccessible, do not send anything. */
++    if (ucon == 0xffffffffu || ulcon == 0xffffffffu ||
++        (ulcon == 0 && ucon == 0 && divider == 0 && slot == 0)) {
++        printf("HEROLTE BT: UART clocks/config not ready, abort HCI probe\n");
++        return;
++    }
++    /* Never reset other GPIO-bank bits, including Wi-Fi pins on GPJ1. */
++    hbt_gpio_function(peric1, HBT_GPJ1, 7, 1);
++    hbt_gpio_level(peric1, HBT_GPJ1, 7, 0);
++    hbt_gpio_function(fsys0, HBT_GPI2, 3, 1);
++    hbt_gpio_level(fsys0, HBT_GPI2, 3, 1);
++    hbt_gpio_function(alive, HBT_GPA2, 3, 0);
++    /* UART1 GPE0.0..3: function 2 per Samsung Device Tree. */
++    for (unsigned pin = 0; pin < 4; pin++)
++        hbt_gpio_function(peric1, HBT_GPE0, pin, 2);
++    IOSleep(10);
++    hbt_gpio_level(peric1, HBT_GPJ1, 7, 1);
++    IOSleep(100); /* Linux bcm4359 power-on delay */
++    /* Current UBRDIV/UDIVSLOT retained: clock frequency is still unknown. */
++    hbt_wr(uart, HBT_ULCON, 3); /* 8 data bits, no parity, 1 stop bit */
++    hbt_wr(uart, HBT_UFCON, 0x07u); /* FIFO enable and clear Rx/Tx */
++    hbt_wr(uart, HBT_UFCON, 0x01u);
++    hbt_wr(uart, HBT_UMCON, 0x10u); /* Hardware flow-control (AFC) */
++    hbt_wr(uart, HBT_UCON, 0x05u); /* Rx/Tx polling/interrupt mode */
++
++    uint8_t data[255];
++    unsigned count = 0;
++    int rc = hbt_hci_command(uart, 0x0c03u, data, &count); /* HCI_Reset */
++    printf("HEROLTE BT: HCI_Reset rc=%d event-bytes=%u\n", rc, count);
++    if (rc == 0) {
++        count = 0;
++        rc = hbt_hci_command(uart, 0x1001u, data, &count); /* Read_Local_Version */
++        printf("HEROLTE BT: Read_Local_Version rc=%d event-bytes=%u\n", rc, count);
++        if (rc == 0 && count >= 12)
++            printf("HEROLTE BT: HCI version %#x manufacturer=%u\n",
++                data[4], (unsigned)data[8] | ((unsigned)data[9] << 8));
++    }
++    /* Probe should not leave an uninitialized transmitter powered. */
++    hbt_gpio_level(peric1, HBT_GPJ1, 7, 0);
++    printf("HEROLTE BT: active probe done; BT_EN set LOW, no iOS stack exposed\n");
++}
++#endif /* ARM64_BOARD_CONFIG_HEROLTE */
