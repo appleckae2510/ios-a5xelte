@@ -11,3 +11,6 @@
 uint32_t hero_fb_enable(void);
 void hero_fb_text(unsigned row, const char *s);
 void hero_fb_hex(unsigned row, const char *label, uint64_t value);
+
+/* S-Boot clean boot splash, drawn to the physical DECON scanout. */
+void hero_fb_splash(void);
