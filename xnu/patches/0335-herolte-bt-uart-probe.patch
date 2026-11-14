@@ -23,7 +23,7 @@ diff --git a/bsd/dev/herolte_bt.c b/bsd/dev/herolte_bt.c
 new file mode 100644
 --- /dev/null
 +++ b/bsd/dev/herolte_bt.c
-@@ -0,0 +1,212 @@
+@@ -0,0 +1,213 @@
 +/*
 + * Experimental Galaxy S7 / Exynos8890 BCM4359 HCI UART bring-up.
 + * Built into XNU; NOT a full IOBluetooth driver.  Default is OFF.
@@ -40,6 +40,7 @@ new file mode 100644
 +#if defined(ARM64_BOARD_CONFIG_HEROLTE)
 +#include <sys/param.h>
 +#include <sys/systm.h>
++#include <kern/clock.h>
 +#include <kern/thread.h>
 +#include <machine/machine_routines.h>
 +#include <pexpert/pexpert.h>
