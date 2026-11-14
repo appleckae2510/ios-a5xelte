@@ -104,3 +104,43 @@ void hero_fb_hex(unsigned row, const char *label, uint64_t value)
     line[n] = 0;
     hero_fb_text(row, line);
 }
+
+
+/* Clean black boot screen, with a centered white, bitten-apple silhouette.
+ * Stage progress stays in LOG_BASE; failure text can still draw over black.
+ * No MMU, heap, PNG decoder, floating point or storage dependency. */
+static int
+hfb_ellipse(int x, int y, int cx, int cy, int rx, int ry)
+{
+    int64_t dx = (int64_t)x - cx, dy = (int64_t)y - cy;
+    return dx * dx * ry * ry + dy * dy * rx * rx <= (int64_t)rx * rx * ry * ry;
+}
+
+static int
+hfb_logo_pixel(int x, int y)
+{
+    int body = hfb_ellipse(x,y,-41,15,77,116) ||
+        hfb_ellipse(x,y,43,15,76,116) ||
+        hfb_ellipse(x,y,0,38,93,100);
+    int bite = hfb_ellipse(x,y,113,-19,48,48);
+    int notch = hfb_ellipse(x,y,0,-94,24,31);
+    int u = 3*(x-23)-2*(y+157), v = 2*(x-23)+3*(y+157);
+    int leaf = ((int64_t)u*u*45*45 + (int64_t)v*v*145*145 <=
+        (int64_t)145*145*45*45);
+    return (body && !bite && !notch) || leaf;
+}
+
+void
+hero_fb_splash(void)
+{
+    volatile uint32_t *fb = (volatile uint32_t *)HERO_FB_BASE;
+    for (unsigned y=0; y<HERO_FB_HEIGHT; ++y)
+        for (unsigned x=0; x<HERO_FB_WIDTH; ++x)
+            fb[y*HERO_FB_WIDTH+x] = 0xff000000u;
+    const int x0=(int)HERO_FB_WIDTH/2, y0=(int)HERO_FB_HEIGHT/2;
+    for (int y=-210; y<=165; ++y)
+        for (int x=-143; x<=143; ++x)
+            if (hfb_logo_pixel(x,y))
+                fb[(unsigned)(y0+y)*HERO_FB_WIDTH+(unsigned)(x0+x)] = 0xffffffffu;
+    __asm__ volatile ("dsb sy" : : : "memory");
+}
