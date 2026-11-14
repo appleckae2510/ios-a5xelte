@@ -34,10 +34,37 @@ UART1 base/256-byte FIFO: https://www.spinics.net/lists/linux-samsung-soc/msg961
 1. Rebuild XNU in GitHub Actions with MACHINE_CONFIG=HEROLTE; verify artifact is from this change, not the old successful build.
 2. Repack a new BOOT candidate using the known working loader and device-specific ADT and Samsung DTBH.
 3. Preserve working hero_out.img and a verified BOOT partition backup outside the phone, with a recovery path through TWRP.
-4. Use herobt=1 only. Do NOT use herobt=2 or remove bluetoothd from heronoexec yet.
+4. The original read-only diagnostic uses herobt=1; the new active test uses herobt=2. Neither enables bluetoothd or an iOS Bluetooth controller.
 5. After boot, pull the persistent log via tools/herolte-log-pull.py and inspect HEROLTE BT lines.
 
 Read-only MMIO may still fail if the hardware clocks are gated, so this stage is experimental.
+
+## Active UART+HCD code, 2026-11-14
+
+PR #2 (commit 62b506919bb3398e62ad6ebfb52b39bde7b69103) adds the first **active**
+herobt=2 stage (currently undergoing GitHub Actions build test).
+
+- UART1 clock source is set to XTCXO 76.8 MHz; only UART1 QSTATE and the UART1
+  PCLK/SCLK manual gates are modified.
+- The Samsung UART divisors are set for 115200 baud, 8N1 with RTS/CTS.
+- GPJ1_7 BT_EN and GPI2_3 BT_WAKE are toggled after pin mux setup.
+- HCI Reset 0x0c03 and Read Local Version 0x1001 are sent.
+- If an owner-sourced /private/var/herolte/bt/fw.hcd is present, its 0xfc4c
+  Write_RAM + final 0xfc4e Launch_RAM commands are validated and sent after
+  Download Minidriver 0xfc2e. Firmware is not committed to GitHub.
+- Post-firmware HCI Reset and version are logged; BT_EN returns LOW at the
+  end of the test. No iOS H4 transport, bluetooth service or daemon is
+  enabled; the userland remains unchanged.
+
+The owner's HCD files, extracted from their own S7, have validated command
+counts: BCM4359C0 Murata 304; BCM4359C0 Semco 305. **The correct module
+is unknown**. Do not substitute firmware for a different module. A separate
+host-side drop package updater retains all existing GPU, Wi-Fi, audio, autorun
+and other entries in HERODRP1 instead of replacing the package wholesale.
+
+The test was not executed on the phone when this text was recorded.
+Do not flash a new BOOT until its kernel CI build succeeds and a full,
+recoverable BOOT backup exists.
 
 ## Unfinished integration gates
 
