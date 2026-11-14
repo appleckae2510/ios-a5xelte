@@ -1,0 +1,23 @@
+diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
+--- a/osfmk/arm64/start.s
++++ b/osfmk/arm64/start.s
+@@ -515,2 +515,2 @@
+-#if defined(A5XELTE)
++#if defined(A5XELTE) && !defined(ARM64_BOARD_CONFIG_HEROLTE)
+ 	/* Earliest XNU-owned physical marker in preserved Samsung log RAM. */
+@@ -890,2 +890,2 @@
+-#if defined(A5XELTE)
++#if defined(A5XELTE) && !defined(ARM64_BOARD_CONFIG_HEROLTE)
+ 	/* Blue block: the 4 KiB MMU is active and the framebuffer alias works. */
+@@ -935,2 +935,2 @@
+-#if defined(A5XELTE)
++#if defined(A5XELTE) && !defined(ARM64_BOARD_CONFIG_HEROLTE)
+ 	/* fp_enabled: write directly to the DECON scanout alias. */
+@@ -975,2 +975,2 @@
+-#if defined(A5XELTE)
++#if defined(A5XELTE) && !defined(ARM64_BOARD_CONFIG_HEROLTE)
+ 	/* tunables_done: write directly to the DECON scanout alias. */
+@@ -1023,2 +1023,2 @@
+-#if defined(A5XELTE)
++#if defined(A5XELTE) && !defined(ARM64_BOARD_CONFIG_HEROLTE)
+ 	/* arm_init_jump: write directly to the DECON scanout alias. */
