@@ -32,8 +32,8 @@ new file mode 100644
 + *  herobt=2: EXPERIMENTAL: setup UART1, HCI Reset + Read Local Version,
 + *            optional owner-provided drop/bt/fw.hcd patchram, no iOS transport.
 + *            Never run without a verified BOOT backup / recovery path.
-+ * The UART clock GATE and divisor are NOT set here; if gated or incorrectly
-+ * configured, the probe will print an error or may hang on MMIO.  Hardware
++ * herobt=2 programs the UART1 clock gate and divisor; if a clock is gated
++ * unexpectedly, hardware access may still fault or hang.  Hardware
 + * responses are NOT evidence that the iOS Bluetooth stack works.
 + * Reference: Samsung kernel drivers/bluetooth/bcm4359.c, Exynos8890 pinctrl.
 + */
@@ -289,7 +289,7 @@ new file mode 100644
 +    return (rc == 0 && done == commands) ? 0 : (rc ? rc : -13);
 +}
 +
-++/* 0336: baud divisor with Exynos fractional slot encoding.
++/* 0336: baud divisor with Exynos fractional slot encoding.
 + * The CMU_PERIC1 UART1 mux selects oscclk at bit 12=0 (76.8 MHz on 8890).
 + * Samsung serial driver udivslot_table; never infer baud from UBRDIV alone. */
 +static const uint16_t hbt_slot_table[16] = {
