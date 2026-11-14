@@ -23,7 +23,7 @@ diff --git a/bsd/dev/herolte_bt.c b/bsd/dev/herolte_bt.c
 new file mode 100644
 --- /dev/null
 +++ b/bsd/dev/herolte_bt.c
-@@ -0,0 +1,421 @@
+@@ -0,0 +1,424 @@
 +/*
 + * Experimental Galaxy S7 / Exynos8890 BCM4359 HCI UART bring-up.
 + * Built into XNU; NOT a full IOBluetooth driver.  Default is OFF.
@@ -312,6 +312,9 @@ new file mode 100644
 +        printf("HEROLTE BT: UART1 oscclk mux did not settle\n");
 +        return 0;
 +    }
++    /* Exynos8890 HW auto clock gating: Linux disables QSTATE so the
++     * manual gate control owns UART1. Only UART1's QSTATE is touched. */
++    hbt_wr(cmu, 0x2424, 0U);
 +    hbt_wr(cmu, 0x1800, hbt_rd(cmu, 0x1800) | (1U << 13));
 +    hbt_wr(cmu, 0x1860, hbt_rd(cmu, 0x1860) | 1U);
 +    hbt_wr(cmu, 0x0800, hbt_rd(cmu, 0x0800) | (1U << 13));
