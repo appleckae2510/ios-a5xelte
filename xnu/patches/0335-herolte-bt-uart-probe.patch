@@ -23,14 +23,14 @@ diff --git a/bsd/dev/herolte_bt.c b/bsd/dev/herolte_bt.c
 new file mode 100644
 --- /dev/null
 +++ b/bsd/dev/herolte_bt.c
-@@ -0,0 +1,280 @@
+@@ -0,0 +1,421 @@
 +/*
 + * Experimental Galaxy S7 / Exynos8890 BCM4359 HCI UART bring-up.
 + * Built into XNU; NOT a full IOBluetooth driver.  Default is OFF.
 + *  herobt=0: off (default); no mappings, no writes.
 + *  herobt=1: read-only MMIO snapshot (CAUTION: inactive clocks may still fault).
-+ *  herobt=2: EXPERIMENTAL: mux/gate UART1 oscclk, set 115200 8N1,
-+ *            GPIO power, H4 Reset + Read Local Version; no iOS transport yet.
++ *  herobt=2: EXPERIMENTAL: setup UART1, HCI Reset + Read Local Version,
++ *            optional owner-provided drop/bt/fw.hcd patchram, no iOS transport.
 + *            Never run without a verified BOOT backup / recovery path.
 + * The UART clock GATE and divisor are NOT set here; if gated or incorrectly
 + * configured, the probe will print an error or may hang on MMIO.  Hardware
@@ -40,6 +40,11 @@ new file mode 100644
 +#if defined(ARM64_BOARD_CONFIG_HEROLTE)
 +#include <sys/param.h>
 +#include <sys/systm.h>
++#include <sys/fcntl.h>
++#include <sys/proc.h>
++#include <sys/vnode_internal.h>
++#include <sys/kauth.h>
++#include <kern/kalloc.h>
 +#include <kern/clock.h>
 +#include <kern/thread.h>
 +#include <machine/machine_routines.h>
@@ -163,7 +168,128 @@ new file mode 100644
 +    return -5;
 +}
 +
-+/* 0336: baud divisor with Exynos fractional slot encoding.
++/* Host-provided Samsung BCM4359 HCD in the iOS drop zone. It must match the
++ * module on this particular phone. No firmware is compiled into the kernel. */
++#define HBT_FW_PATH "/private/var/herolte/bt/fw.hcd"
++#define HBT_FW_MAX (128U * 1024U)
++
++static unsigned
++hbt_fw_read(void *data, unsigned cap)
++{
++    vfs_context_t ctx = vfs_context_kernel();
++    vnode_t vp = NULLVP;
++    int resid = 0;
++    int err = vnode_open(HBT_FW_PATH, FREAD, 0, 0, &vp, ctx);
++    if (err) {
++        printf("HEROLTE BT: HCD not staged (%s, err=%d)\n", HBT_FW_PATH, err);
++        return 0;
++    }
++    err = vn_rdwr(UIO_READ, vp, (caddr_t)data, (int)cap, 0, UIO_SYSSPACE, 0,
++        vfs_context_ucred(ctx), &resid, vfs_context_proc(ctx));
++    vnode_close(vp, FREAD, ctx);
++    if (err || resid == (int)cap) {
++        printf("HEROLTE BT: HCD read failed err=%d remaining=%d\n", err, resid);
++        return 0;
++    }
++    return cap - (unsigned)resid;
++}
++
++static int
++hbt_validate_hcd(const uint8_t *data, unsigned size, unsigned *count)
++{
++    unsigned off = 0, n = 0;
++    if (!size || size > HBT_FW_MAX) return 0;
++    while (off < size && n < 1024) {
++        if (size - off < 3) return 0;
++        uint16_t opcode = (uint16_t)(data[off] | (data[off + 1] << 8));
++        unsigned plen = data[off + 2];
++        off += 3;
++        if (plen > size - off) return 0;
++        if (opcode == 0xfc4e) {
++            if (plen != 4 || off + plen != size || n < 1) return 0;
++            *count = n + 1;
++            return 1;
++        }
++        if (opcode != 0xfc4c || plen < 5) return 0;
++        off += plen;
++        n++;
++    }
++    return 0;
++}
++
++/* One H4 command with parameters. Wait for its matching Command Complete;
++ * Command Status success is NOT completion. All UART waits are bounded. */
++static int
++hbt_hci_vendor(vm_offset_t uart, uint16_t opcode, const uint8_t *param, unsigned plen)
++{
++    if (plen > 255) return -1;
++    uint8_t head[4] = {1, (uint8_t)opcode, (uint8_t)(opcode >> 8), (uint8_t)plen};
++    for (unsigned i = 0; i < 4; i++)
++        if (!hbt_uart_write(uart, head[i])) return -1;
++    for (unsigned i = 0; i < plen; i++)
++        if (!hbt_uart_write(uart, param[i])) return -1;
++    for (unsigned e = 0; e < 8; e++) {
++        uint8_t type, ev, len, body[255];
++        if (!hbt_uart_read(uart, &type) || !hbt_uart_read(uart, &ev) ||
++            !hbt_uart_read(uart, &len)) return -2;
++        if (type != 4) return -3;
++        for (unsigned i = 0; i < len; i++)
++            if (!hbt_uart_read(uart, &body[i])) return -2;
++        if (ev == 0x0e && len >= 4 &&
++            body[1] == (uint8_t)opcode && body[2] == (uint8_t)(opcode >> 8))
++            return body[3] ? -4 : 0;
++        if (ev == 0x0f && len >= 4 &&
++            body[2] == (uint8_t)opcode && body[3] == (uint8_t)(opcode >> 8) &&
++            body[0]) return -4;
++    }
++    return -5;
++}
++
++/* Same .hcd command stream semantics as Linux btbcm_patchram(). A final
++ * Launch RAM can reset the controller without a reply; verify with HCI later. */
++static int
++hbt_load_hcd(vm_offset_t uart)
++{
++    uint8_t *fw = kalloc_data(HBT_FW_MAX, Z_WAITOK);
++    if (!fw) return -10;
++    unsigned len = hbt_fw_read(fw, HBT_FW_MAX), commands = 0;
++    if (!len) { kfree_data(fw, HBT_FW_MAX); return -11; }
++    if (!hbt_validate_hcd(fw, len, &commands)) {
++        printf("HEROLTE BT: rejected invalid HCD (%u bytes)\n", len);
++        kfree_data(fw, HBT_FW_MAX);
++        return -12;
++    }
++    printf("HEROLTE BT: HCD accepted bytes=%u commands=%u\n", len, commands);
++    uint8_t unused[255]; unsigned unused_len = 0;
++    int rc = hbt_hci_command(uart, 0xfc2e, unused, &unused_len);
++    if (rc) { kfree_data(fw, HBT_FW_MAX); return rc; }
++    IOSleep(50);
++    unsigned off = 0, done = 0;
++    while (off < len) {
++        uint16_t opcode = (uint16_t)(fw[off] | (fw[off+1] << 8));
++        unsigned plen = fw[off+2];
++        const uint8_t *params = fw + off + 3;
++        off += 3 + plen;
++        if (opcode == 0xfc4e) {
++            uint8_t head[4] = {1, 0x4e, 0xfc, 4};
++            for (unsigned i = 0; i < 4; i++)
++                if (!hbt_uart_write(uart, head[i])) { rc = -1; break; }
++            if (!rc) for (unsigned i = 0; i < plen; i++)
++                if (!hbt_uart_write(uart, params[i])) { rc = -1; break; }
++            if (!rc) { done++; IOSleep(250); }
++            break;
++        }
++        rc = hbt_hci_vendor(uart, opcode, params, plen);
++        if (rc) break;
++        done++;
++        if ((done % 64) == 0) printf("HEROLTE BT: HCD progress %u/%u\n", done, commands);
++    }
++    printf("HEROLTE BT: HCD finished=%u/%u rc=%d\n", done, commands, rc);
++    kfree_data(fw, HBT_FW_MAX);
++    return (rc == 0 && done == commands) ? 0 : (rc ? rc : -13);
++}
++
+++/* 0336: baud divisor with Exynos fractional slot encoding.
 + * The CMU_PERIC1 UART1 mux selects oscclk at bit 12=0 (76.8 MHz on 8890).
 + * Samsung serial driver udivslot_table; never infer baud from UBRDIV alone. */
 +static const uint16_t hbt_slot_table[16] = {
@@ -297,8 +423,23 @@ new file mode 100644
 +                data[4], (unsigned)data[8] | ((unsigned)data[9] << 8),
 +                (unsigned)data[5] | ((unsigned)data[6] << 8));
 +    }
-+    if (rc != 0)
++    if (rc != 0) {
 +        printf("HEROLTE BT: no controller response yet; verify UART parent and pinctrl\n");
++    } else {
++        int fw_rc = hbt_load_hcd(uart);
++        printf("HEROLTE BT: firmware loader rc=%d (missing file is expected for HCI-only test)\n", fw_rc);
++        if (fw_rc == 0) {
++            IOSleep(250);
++            unsigned post_len = 0;
++            int post = hbt_hci_command(uart, 0x0c03u, data, &post_len);
++            printf("HEROLTE BT: after HCD HCI_Reset rc=%d bytes=%u\n", post, post_len);
++            if (post == 0) {
++                post_len = 0;
++                post = hbt_hci_command(uart, 0x1001u, data, &post_len);
++                printf("HEROLTE BT: after HCD Local Version rc=%d bytes=%u\n", post, post_len);
++            }
++        }
++    }
 +    /* Probe should not leave an uninitialized transmitter powered. */
 +    hbt_gpio_level(peric1, HBT_GPJ1, 7, 0);
 +    printf("HEROLTE BT: active probe done; BT_EN set LOW, no iOS stack exposed\n");
