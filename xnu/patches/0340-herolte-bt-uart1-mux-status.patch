@@ -1,0 +1,41 @@
+diff --git a/bsd/dev/herolte_bt.c b/bsd/dev/herolte_bt.c
+--- a/bsd/dev/herolte_bt.c
++++ b/bsd/dev/herolte_bt.c
+@@ -327,17 +327,27 @@
+ {
+     /* Switch UART1 only to the known 76.8-MHz oscclk. Other UARTs unchanged.
+      * The parent clock is selected before enabling the local manual gates. */
+-    uint32_t mux = hbt_rd(cmu, 0x0224);
+-    hbt_wr(cmu, 0x0224, mux & ~(1U << 12));
+-    for (unsigned i = 0; i < 100; ++i) {
+-        if (!(hbt_rd(cmu, 0x0624) & (1U << 12))) break;
+-        delay(100);
+-    }
+-    if (hbt_rd(cmu, 0x0624) & (1U << 12)) {
+-        printf("HEROLTE BT: UART1 oscclk mux did not settle\n");
+-        return 0;
+-    }
++    /* Exynos CMU mux status is ONE-HOT in bits [13:12]:
++     * bit 12 means parent 0 (oscclk), bit 13 means parent 1.
++     * The earlier test inverted this and rejected the correct 0x1000 status.
++     * Only UART1's mux selection bit is changed. */
++    uint32_t mux = hbt_rd(cmu, 0x0224);
++    hbt_wr(cmu, 0x0224, mux & ~(1U << 12));
++    uint32_t mux_status = 0;
++    for (unsigned i = 0; i < 100; ++i) {
++        mux_status = hbt_rd(cmu, 0x0624);
++        if ((mux_status & (3U << 12)) == (1U << 12)) break;
++        delay(100);
++    }
++    mux_status = hbt_rd(cmu, 0x0624);
++    if ((mux_status & (3U << 12)) != (1U << 12)) {
++        printf("HEROLTE BT: UART1 oscclk mux did not settle sel=%#x stat=%#x\n",
++            hbt_rd(cmu, 0x0224), mux_status);
++        return 0;
++    }
++    printf("HEROLTE BT: UART1 oscclk mux ready sel=%#x stat=%#x\n",
++        hbt_rd(cmu, 0x0224), mux_status);
+     /* Exynos8890 HW auto clock gating: Linux disables QSTATE so the
+      * manual gate control owns UART1. Only UART1's QSTATE is touched. */
+     hbt_wr(cmu, 0x2424, 0U);
+     hbt_wr(cmu, 0x1800, hbt_rd(cmu, 0x1800) | (1U << 13));
