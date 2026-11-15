@@ -108,7 +108,7 @@ jobs:
       - name: Assert herolte H4 Bluetooth patch was compiled
         if: env.MACHINE_CONFIG == 'HEROLTE'
         run: |
-          if grep -E 'Skipping patch .*0338-herolte-bluetooth-h4-kctl.patch' build.log; then
+          if grep -E 'Skipping patch .*033(8-herolte-bluetooth-h4-kctl|9-herolte-bt-serial-fixes)\\.patch' build.log; then
             echo "::error::Mandatory Bluetooth H4 patch was skipped"
             exit 1
           fi
@@ -118,6 +118,8 @@ jobs:
           }
           grep -q 'com.apple.uart.bluetooth' dxb/xnu/bsd/dev/herolte_bt_h4.c || exit 1
           grep -q 'herolte_bt_h4.c' dxb/xnu/bsd/conf/files || exit 1
+          grep -q 'herolte_bt_hw_set_baud' dxb/xnu/bsd/dev/herolte_bt.c || { echo "::error::Bluetooth 0339 patch missing"; exit 1; }
+          grep -q 'TIOCFLUSH' dxb/xnu/bsd/dev/herolte_bt_h4.c || { echo "::error::Bluetooth 0339 H4 ioctl changes missing"; exit 1; }
           echo "Bluetooth H4 source and XNU build rule confirmed"
 
       # Logs need a GitHub sign-in to read; check-run annotations are public.
