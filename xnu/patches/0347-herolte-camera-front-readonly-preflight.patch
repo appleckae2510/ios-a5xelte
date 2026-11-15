@@ -1,0 +1,86 @@
+diff --git a/bsd/dev/herolte_gpu.c b/bsd/dev/herolte_gpu.c
+--- a/bsd/dev/herolte_gpu.c
++++ b/bsd/dev/herolte_gpu.c
+@@ -109,3 +109,67 @@
++/*
++ * Exynos8890 / Galaxy S7 camera stage 1 (2026-11-15).
++ * Uses matching Note FE camera map as a reference, but all addresses here
++ * were cross-checked against the SM-G930F DTBH in the user's own boot IMG.
++ * Absolutely read-only: no PMIC, pinmux, I2C, camera clock or CSIS writes.
++ * herocam=1 performs this preflight in a thread; herocam=0 is inert.
++ * It deliberately does NOT claim a working iOS camera pipeline.
++ */
++static void
++hcam_probe_readonly(__unused void *arg, __unused wait_result_t wr)
++{
++    /* Boot log and persistent ring writer will normally be up by now. */
++    hg_msleep(2500);
++    vm_offset_t pmu = ml_io_map(0x105c0000u, 0x5000);
++    vm_offset_t top = ml_io_map(0x10570000u, 0x1000);
++    vm_offset_t peric0 = ml_io_map(0x13610000u, 0x3000);
++    vm_offset_t pins = ml_io_map(0x136d0000u, 0x1000);
++    if (!pmu || !top || !peric0 || !pins) {
++        printf("HEROLTE CAM: stage1 map failure; no hardware writes\n");
++        return;
++    }
++    /* DTBH: S5K4E6 front on CSIS2 0x14100000, I2C1, MCLK2;
++     * S2MPB02 at 0x59 on HSI2C9; front reset GPC0-4,
++     * standby GPC1-1, MCLK GPK0-2. Rear S5K2L1/IMX260
++     * is behind the companion and is intentionally untouched. */
++    printf("HEROLTE CAM: S7 front=S5K4E6 CSIS2=0x14100000 MCLK2 I2C1, rear=companion; read-only probe\n");
++    static const struct {
++        const char *name;
++        uint32_t off;
++    } pd[] = {
++        { "CAM0", 0x4020 }, { "CAM1", 0x40a0 },
++        { "ISP0", 0x4140 }, { "ISP1", 0x4160 }
++    };
++    for (unsigned i = 0; i < sizeof(pd) / sizeof(pd[0]); ++i) {
++        printf("HEROLTE CAM: PMU %s config=%#x status=%#x\n",
++            pd[i].name, hg_rd(pmu, pd[i].off), hg_rd(pmu, pd[i].off + 4));
++    }
++    for (unsigned n = 0; n != 4; ++n) {
++        uint32_t off = 0xb00u + n * 0x10u;
++        printf("HEROLTE CAM: TOP SENSOR%u mux=%#x div=%#x stat=%#x enable=%#x\n",
++            n, hg_rd(top, off), hg_rd(top, off + 4),
++            hg_rd(top, off + 8), hg_rd(top, off + 12));
++    }
++    printf("HEROLTE CAM: PERIC0 HSI2C9 gates=%#x manual=%#x; no changes\n",
++        hg_rd(peric0, 0x800), hg_rd(peric0, 0x1800));
++    static const struct {
++        const char *name;
++        uint32_t off;
++    } banks[] = {
++        { "GPD1/I2C9", 0x40 }, { "GPC0/reset", 0x100 },
++        { "GPC1/standby", 0x120 }, { "GPC2/sensorI2C", 0x140 },
++        { "GPK0/MCLK", 0x180 }
++    };
++    for (unsigned i = 0; i < sizeof(banks) / sizeof(banks[0]); ++i) {
++        uint32_t off = banks[i].off;
++        printf("HEROLTE CAM: PINS %s con=%#x dat=%#x pud=%#x\n",
++            banks[i].name, hg_rd(pins, off),
++            hg_rd(pins, off + 4), hg_rd(pins, off + 8));
++    }
++    /* Never read CSIS registers when pd-CAM1 / clock gates might be off:
++     * an ungated Exynos bus read can freeze the SoC. */
++    printf("HEROLTE CAM: stage1 complete; power rails/CSIS/I2C/DMA unchanged. Await S7 log before enabling captures.\n");
++}
++
+ static void
+ hg_probe(vm_offset_t pmu, const char *when)
+ {
+@@ -3811,3 +3875,14 @@
++	/* The Note FE front S5K4E6 shares the S7's CSIS2 route.
++	 * Stage 1 only reads S7 camera/power registers; it never powers a sensor. */
++	uint32_t herocam = 0;
++	PE_parse_boot_argn("herocam", &herocam, sizeof(herocam));
++	if (herocam == 1) {
++	    if (kernel_thread_start(hcam_probe_readonly, NULL, &thread) == KERN_SUCCESS)
++	        thread_deallocate(thread);
++	} else if (herocam != 0) {
++	    printf("HEROLTE CAM: only safe stage1 is supported; mode %u ignored\n", herocam);
++	}
++
+ 	/* 0335: optional Bluetooth hardware probe; herobt=0 (default) is fully inert. */
+ 	int herobt = 0;
+ 	PE_parse_boot_argn("herobt", &herobt, sizeof(herobt));
