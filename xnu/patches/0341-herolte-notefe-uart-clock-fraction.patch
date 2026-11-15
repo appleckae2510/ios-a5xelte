@@ -1,0 +1,167 @@
+diff --git a/bsd/dev/herolte_bt.c b/bsd/dev/herolte_bt.c
+--- a/bsd/dev/herolte_bt.c
++++ b/bsd/dev/herolte_bt.c
+@@ -33,7 +33,8 @@
+ #define HBT_PERIC1_PA   0x14cc0000u
+ #define HBT_UART_PA     0x14c20000u
+ /* Exynos8890 CMU_PERIC1; upstream Linux clk-exynos8890.c. No writes here. */
+-#define HBT_CMU_PERIC1_PA 0x14c80000u
++#define HBT_CMU_PERIC1_PA 0x14c80000u
++#define HBT_CMU_TOP_PA 0x10570000u
+ /* Linux exynos8890 pinctrl bank offsets */
+ #define HBT_GPA2       0x040u /* GPA2.3 host-wake input */
+ #define HBT_GPI2       0x020u /* GPI2.3 BT_WAKE output */
+@@ -285,34 +286,54 @@
+     return (rc == 0 && done == commands) ? 0 : (rc ? rc : -13);
+ }
+ 
+-/* 0336: baud divisor with Exynos fractional slot encoding.
+- * The CMU_PERIC1 UART1 mux selects oscclk at bit 12=0 (76.8 MHz on 8890).
+- * Samsung serial driver udivslot_table; never infer baud from UBRDIV alone. */
+-static const uint16_t hbt_slot_table[16] = {
+-    0x0000, 0x0080, 0x0808, 0x0888, 0x2222, 0x4924, 0x4a52, 0x54aa,
+-    0x5555, 0xd555, 0xd5d5, 0xddd5, 0xdddd, 0xdfdd, 0xdfdf, 0xffdf
+-};
+-
+-/* Exynos fractional-slot baud programming shared by bring-up and H4 ioctl.
+- * Only UART1 is touched.  Reject rates that cannot be represented within
+- * three percent by the verified 76.8 MHz parent clock. */
+-static int
+-hbt_uart_set_baud(vm_offset_t uart, unsigned baud)
+-{
+-    const uint32_t clock_hz = 76800000U;
+-    if (baud < 9600U || baud > 4000000U) return 0;
+-    uint32_t div16 = (clock_hz + baud / 2U) / baud;
+-    if (div16 < 16U || div16 > (65536U * 16U)) return 0;
+-    uint32_t actual = (clock_hz + div16 / 2U) / div16;
+-    uint32_t error = actual > baud ? actual - baud : baud - actual;
+-    if ((uint64_t)error * 100U > (uint64_t)baud * 3U) return 0;
+-    uint32_t whole = div16 / 16U, frac = div16 % 16U;
+-    hbt_wr(uart, HBT_UBRDIV, whole - 1U);
+-    hbt_wr(uart, HBT_UDIVSLOT, hbt_slot_table[frac]);
+-    printf("HEROLTE BT: UART1 baud requested=%u actual=%u div=%u slot=%#x\n",
+-        baud, actual, whole - 1U, hbt_slot_table[frac]);
+-    return 1;
+-}
++/* Experimental Exynos8890 UART1 clock port, informed by
++ * egemengunel/ios-a5xelte gracerlte patches 0432-0433.
++ * Do not assume a fixed 76.8 MHz parent. On Note FE, the measured
++ * source is 132 MHz and UART1's register 0x2c is UFRACVAL (0..15),
++ * not the legacy Samsung UDIVSLOT bit-pattern table.
++ * Check the S7 boot log before using the result as a confirmed fact. */
++static uint32_t hbt_uart1_clock_hz;
++
++static uint32_t
++hbt_top_uart1_rate(vm_offset_t top)
++{
++    uint32_t con0 = hbt_rd(top, 0x100);
++    uint32_t m = (con0 >> 16) & 0x3ffU, p = (con0 >> 8) & 0x3fU, s = con0 & 7U;
++    uint64_t pll = p ? (26000000ULL * m) / ((uint64_t)p << s) : 0;
++    uint32_t bus_mux = hbt_rd(top, 0x200);
++    uint32_t bus_sclk = hbt_rd(top, 0x220);
++    uint32_t uart_mux = hbt_rd(top, 0x354);
++    uint32_t uart_div = hbt_rd(top, 0x4b4);
++    uint64_t rate = ((bus_mux >> 12) & 1U) ? pll : 26000000ULL;
++    if ((bus_sclk >> 12) & 1U) rate /= 2;
++    uint32_t sel = (uart_mux >> 12) & 3U;
++    if (sel == 1U) rate = 0; /* BUS1 rate unverified */
++    else if (sel >= 2U) rate = 26000000ULL;
++    rate /= (uart_div & 0xfU) + 1U;
++    printf("HEROLTE BT: TOP UART1 pll=%llu bus=%#x sclk=%#x src=%#x div=%#x rate=%llu Hz\n",
++        (unsigned long long)pll, bus_mux, bus_sclk, uart_mux, uart_div,
++        (unsigned long long)rate);
++    if (rate < 1843200ULL || rate > 1000000000ULL) return 0;
++    return (uint32_t)rate;
++}
++
++static int
++hbt_uart_set_baud(vm_offset_t uart, unsigned baud)
++{
++    const uint32_t clock_hz = hbt_uart1_clock_hz;
++    if (!clock_hz || baud < 9600U || baud > 4000000U) return 0;
++    uint32_t div16 = clock_hz / baud;
++    if (div16 < 16U || div16 > 1048576U) return 0;
++    uint32_t actual = clock_hz / div16;
++    uint32_t error = actual > baud ? actual - baud : baud - actual;
++    if ((uint64_t)error * 100U > (uint64_t)baud * 3U) return 0;
++    uint32_t whole = div16 / 16U, frac = div16 % 16U;
++    hbt_wr(uart, HBT_UBRDIV, whole - 1U);
++    hbt_wr(uart, HBT_UDIVSLOT, frac); /* UFRACVAL: direct fraction */
++    printf("HEROLTE BT: UART1 baud requested=%u actual=%u clock=%u div=%u frac=%u\n",
++        baud, actual, clock_hz, whole - 1U, frac);
++    return 1;
++}
+ 
+ int
+ herolte_bt_hw_set_baud(unsigned baud)
+@@ -322,31 +343,24 @@
+     return hbt_uart_set_baud(hbt_h4_uart, baud);
+ }
+ 
+-static int
+-hbt_uart1_enable(vm_offset_t cmu, vm_offset_t uart)
+-{
+-    /* Switch UART1 only to the known 76.8-MHz oscclk. Other UARTs unchanged.
+-     * The parent clock is selected before enabling the local manual gates. */
+-    /* Exynos CMU mux status is ONE-HOT in bits [13:12]:
+-     * bit 12 means parent 0 (oscclk), bit 13 means parent 1.
+-     * The earlier test inverted this and rejected the correct 0x1000 status.
+-     * Only UART1's mux selection bit is changed. */
+-    uint32_t mux = hbt_rd(cmu, 0x0224);
+-    hbt_wr(cmu, 0x0224, mux & ~(1U << 12));
+-    uint32_t mux_status = 0;
+-    for (unsigned i = 0; i < 100; ++i) {
+-        mux_status = hbt_rd(cmu, 0x0624);
+-        if ((mux_status & (3U << 12)) == (1U << 12)) break;
+-        delay(100);
+-    }
+-    mux_status = hbt_rd(cmu, 0x0624);
+-    if ((mux_status & (3U << 12)) != (1U << 12)) {
+-        printf("HEROLTE BT: UART1 oscclk mux did not settle sel=%#x stat=%#x\n",
+-            hbt_rd(cmu, 0x0224), mux_status);
+-        return 0;
+-    }
+-    printf("HEROLTE BT: UART1 oscclk mux ready sel=%#x stat=%#x\n",
+-        hbt_rd(cmu, 0x0224), mux_status);
++static int
++hbt_uart1_enable(vm_offset_t cmu, vm_offset_t top, vm_offset_t uart)
++{
++    /* Preserve S-Boot's UART1 parent instead of unconditionally forcing
++     * oscclk. The Exynos mux status is one-hot for selection 0/1. */
++    uint32_t mux = hbt_rd(cmu, 0x0224);
++    uint32_t parent = (mux >> 12) & 1U;
++    uint32_t expected = 1U << (12U + parent);
++    uint32_t status = hbt_rd(cmu, 0x0624);
++    if ((status & (3U << 12)) != expected) {
++        printf("HEROLTE BT: UART1 mux not settled sel=%#x stat=%#x expected=%#x\n",
++            mux, status, expected);
++        return 0;
++    }
++    hbt_uart1_clock_hz = parent ? hbt_top_uart1_rate(top) : 26000000U;
++    printf("HEROLTE BT: UART1 mux sel=%#x stat=%#x parent=%u clock=%u\n",
++        mux, status, parent, hbt_uart1_clock_hz);
++    if (!hbt_uart1_clock_hz) return 0;
+     /* Exynos8890 HW auto clock gating: Linux disables QSTATE so the
+      * manual gate control owns UART1. Only UART1's QSTATE is touched. */
+     hbt_wr(cmu, 0x2424, 0U);
+@@ -385,8 +399,9 @@
+     vm_offset_t fsys0 = ml_io_map(HBT_FSYS0_PA, 0x1000);
+     vm_offset_t peric1 = ml_io_map(HBT_PERIC1_PA, 0x1000);
+     vm_offset_t uart = ml_io_map(HBT_UART_PA, 0x1000);
+-    vm_offset_t cmu = ml_io_map(HBT_CMU_PERIC1_PA, 0x3000);
++    vm_offset_t cmu = ml_io_map(HBT_CMU_PERIC1_PA, 0x3000);
++    vm_offset_t top = ml_io_map(HBT_CMU_TOP_PA, 0x1000);
+-    if (!alive || !fsys0 || !peric1 || !uart || !cmu) {
++    if (!alive || !fsys0 || !peric1 || !uart || !cmu || !top) {
+         printf("HEROLTE BT: MMIO map FAILED alive=%d fsys0=%d peric1=%d uart=%d cmu=%d\n",
+             alive != 0, fsys0 != 0, peric1 != 0, uart != 0, cmu != 0);
+         return;
+@@ -423,7 +438,7 @@
+     }
+     /* mode2 genuinely enables UART1 and prepares an HCI session rather than
+      * requiring an impossible preinitialised UBRDIV (mode1 saw DIV=0). */
+-    if (!hbt_uart1_enable(cmu, uart)) {
++    if (!hbt_uart1_enable(cmu, top, uart)) {
+         printf("HEROLTE BT: mode2 UART1 init failed; no BT power writes\n");
+         return;
+     }
