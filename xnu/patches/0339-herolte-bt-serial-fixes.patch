@@ -176,3 +176,4 @@ index 1111111..2222222 100644
 +        void *c=devfs_make_node(makedev(h4.major,2),DEVFS_CHAR,UID_ROOT,GID_WHEEL,0600,"btwake");
          printf("HEROLTE BT H4: devices cu=%d uart=%d btwake=%d\n",a!=NULL,b!=NULL,c!=NULL);
      } else printf("HEROLTE BT H4: cdevsw_add failed\n");
+     thread_t t;
