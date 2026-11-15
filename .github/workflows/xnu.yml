@@ -102,6 +102,24 @@ jobs:
           set -o pipefail
           bash build.sh 2>&1 | tee ../build.log
 
+      # The upstream build.sh deliberately skips malformed patches without
+      # failing the build. Do not report a "successful Bluetooth build" when
+      # our H4 patch has silently been ignored (observed 2026-11-15).
+      - name: Assert herolte H4 Bluetooth patch was compiled
+        if: env.MACHINE_CONFIG == 'HEROLTE'
+        run: |
+          if grep -E 'Skipping patch .*0338-herolte-bluetooth-h4-kctl.patch' build.log; then
+            echo "::error::Mandatory Bluetooth H4 patch was skipped"
+            exit 1
+          fi
+          test -s dxb/xnu/bsd/dev/herolte_bt_h4.c || {
+            echo "::error::Bluetooth H4 source missing from patched XNU tree"
+            exit 1
+          }
+          grep -q 'com.apple.uart.bluetooth' dxb/xnu/bsd/dev/herolte_bt_h4.c || exit 1
+          grep -q 'herolte_bt_h4.c' dxb/xnu/bsd/conf/files || exit 1
+          echo "Bluetooth H4 source and XNU build rule confirmed"
+
       # Logs need a GitHub sign-in to read; check-run annotations are public.
       # Publish the first errors and the log tail so failures can be read
       # through the API (repos/.../check-runs/<job>/annotations).
