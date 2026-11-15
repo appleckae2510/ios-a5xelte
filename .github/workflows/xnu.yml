@@ -120,9 +120,9 @@ jobs:
           grep -q 'herolte_bt_h4.c' dxb/xnu/bsd/conf/files || exit 1
           grep -q 'herolte_bt_hw_set_baud' dxb/xnu/bsd/dev/herolte_bt.c || { echo "::error::Bluetooth 0339 patch missing"; exit 1; }
           grep -q 'TIOCFLUSH' dxb/xnu/bsd/dev/herolte_bt_h4.c || { echo "::error::Bluetooth 0339 H4 ioctl changes missing"; exit 1; }
-          grep -q 'UART1 oscclk mux ready' dxb/xnu/bsd/dev/herolte_bt.c || { echo "::error::Bluetooth 0340 mux status fix missing"; exit 1; }
           echo "Bluetooth H4 source and XNU build rule confirmed"
-          # Experimental Note FE reference, only on the cross-port branch.
+          # 0341 replaces 0340's debug message on the experimental branch;
+          # do not fail that branch just because the old log string is gone.
           if [ "$GITHUB_REF_NAME" = "experiment/notefe-bluetooth-crossport" ]; then
             if grep -E 'Skipping patch .*0341-herolte-notefe-uart-clock-fraction[.]patch' build.log; then
               echo "::error::Experimental Note FE UART1 patch was skipped"
@@ -136,7 +136,16 @@ jobs:
               echo "::error::Expected Exynos8890 UART1 fraction fix missing"
               exit 1
             }
+            grep -q 'UART1 mux not settled' dxb/xnu/bsd/dev/herolte_bt.c || {
+              echo "::error::Expected strict one-hot mux status check missing"
+              exit 1
+            }
             echo "Experimental Note FE UART1 clock/fraction source confirmed"
+          else
+            grep -q 'UART1 oscclk mux ready' dxb/xnu/bsd/dev/herolte_bt.c || {
+              echo "::error::Bluetooth 0340 mux status fix missing"
+              exit 1
+            }
           fi
 
       # Logs need a GitHub sign-in to read; check-run annotations are public.
