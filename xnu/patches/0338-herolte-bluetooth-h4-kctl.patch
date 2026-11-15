@@ -888,7 +888,7 @@ diff --git a/bsd/dev/herolte_bt_h4.c b/bsd/dev/herolte_bt_h4.c
 new file mode 100644
 --- /dev/null
 +++ b/bsd/dev/herolte_bt_h4.c
-@@ -0,0 +1,371 @@
+@@ -0,0 +1,372 @@
 +/*
 + * Galaxy S7 Exynos8890 BCM4359: H4 UART kernel-control transport.
 + * Register only after valid firmware patchram and post-firmware HCI test.
@@ -902,6 +902,7 @@ new file mode 100644
 +#include <sys/kpi_mbuf.h>
 +#include <sys/conf.h>
 +#include <sys/uio.h>
++#include <sys/vnode.h>
 +#include <sys/fcntl.h>
 +#include <sys/proc.h>
 +#include <sys/select.h>
