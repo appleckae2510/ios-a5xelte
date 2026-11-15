@@ -71,8 +71,8 @@ ignition_level=1 launchd_unsecure_cache=1 wdt=-1 -wdt_no_pmu wdt_test=no_user_ch
 a5fb_keep_on=1 a5fb_noconsole=1 a5fb_perf=1 a5fb_hz=60 sweetfb_native=1 sweetfb_scale=1 \
 sweetfb_lw=750 sweetfb_lh=1334 sweetfb_gpu=1 cpus=8 herogl=1 sweettop=1 \
 vm_compression_limit=98304 vm_compressor=2 \
-heronoexec=vmd,bluetoothd,searchd,ReportCrash,aggregated,analyticsd,cloudd,homed,driverkitd \
-glsb3=1 herogpu_mhz=650 herocpu_mhz=2288 herosb=1 sweetsample=-"
+heronoexec=vmd,searchd,ReportCrash,aggregated,analyticsd,cloudd,homed,driverkitd \
+glsb3=1 herogpu_mhz=650 herocpu_mhz=2288 herosb=1 herobt=2 sweetsample=-"
 
 python3 tools/mkpayload.py kernel.development.herolte herolte.adt payload.bin --cmdline "$CMDLINE"
 ```
@@ -192,3 +192,25 @@ names of nearby networks can be in it.
 ## Back to Android
 
 Write your saved `boot-stock.img` back to BOOT and format Data in TWRP.
+
+
+## Experimental Bluetooth bring-up (Galaxy S7 BCM4359)
+
+The XNU H4 transport and local Broadcom controller interface are still experimental;
+**a green GitHub build is not proof of Bluetooth on iOS**. The boot command line
+uses `herobt=2` to turn on the UART1/H4 path and must **not** include
+`bluetoothd` in `heronoexec=`. Keep a verified device BOOT backup and working
+recovery before using any newly packed BOOT candidate.
+
+The firmware `/private/var/herolte/bt/fw.hcd` must be extracted from the **same
+phone's own original firmware** and match its Murata or Semco BCM4359 module.
+Neither firmware nor private iOS system files are committed to this repository.
+To stage an existing, offline mounted iOS root and owner-extracted HCD:
+
+```sh
+python3 tools/herolte-bluetooth-userland.py /mnt/iosroot --firmware /path/to/own/bcm4359.hcd
+```
+
+Capture and examine `HEROLTE BT:` and `HEROLTE BT H4:` log lines after boot.
+Only a successful HCI Reset, firmware upload, iOS daemon startup and real device
+scanning/pairing can establish working Bluetooth. Booting the loader alone cannot.
