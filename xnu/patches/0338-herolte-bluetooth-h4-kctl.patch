@@ -9,13 +9,13 @@ diff --git a/bsd/conf/files b/bsd/conf/files
 diff --git a/bsd/dev/herolte_bt.c b/bsd/dev/herolte_bt.c
 --- a/bsd/dev/herolte_bt.c
 +++ b/bsd/dev/herolte_bt.c
-@@ -31,6 +31,7 @@
+@@ -31,3 +31,4 @@
  extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
  extern void IOSleep(unsigned milliseconds);
 +extern int herolte_bt_h4_start(void);
 
  #define HBT_ALIVE_PA    0x10580000u
-@@ -118,6 +119,26 @@
+@@ -118,2 +119,18 @@
 -static int
 -hbt_hci_command(vm_offset_t uart, uint16_t opcode, uint8_t *out, unsigned *out_size)
 +/* Expose UART1 only once the firmware has completed and HCI is responsive.
@@ -36,11 +36,11 @@ diff --git a/bsd/dev/herolte_bt.c b/bsd/dev/herolte_bt.c
 +}
 +static int
 +hbt_hci_command(vm_offset_t uart, uint16_t opcode, uint8_t *out, unsigned *out_size)
-@@ -402,6 +423,7 @@
+@@ -402,1 +423,2 @@
 -    uint8_t data[255];
 +    uint8_t data[255];
 +    int h4_started = 0;
-@@ -432,6 +454,12 @@
+@@ -432,2 +454,7 @@
                  printf("HEROLTE BT: after HCD Local Version rc=%d bytes=%u\n", post, post_len);
 +                if (post == 0) {
 +                    hbt_h4_uart = uart;
@@ -48,7 +48,7 @@ diff --git a/bsd/dev/herolte_bt.c b/bsd/dev/herolte_bt.c
 +                    if (!h4_started) hbt_h4_uart = 0;
 +                }
              }
-@@ -440,6 +468,10 @@
+@@ -440,1 +468,5 @@
 -    /* Probe should not leave an uninitialized transmitter powered. */
 +    if (h4_started) {
 +        printf("HEROLTE BT: H4 transport active; chip stays powered\n");
