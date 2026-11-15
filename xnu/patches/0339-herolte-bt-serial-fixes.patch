@@ -1,0 +1,178 @@
+diff --git a/bsd/dev/herolte_bt.c b/bsd/dev/herolte_bt.c
+index 1111111..2222222 100644
+--- a/bsd/dev/herolte_bt.c
++++ b/bsd/dev/herolte_bt.c
+@@ -242,7 +242,13 @@
+ {
+     uint8_t *fw = kalloc_data(HBT_FW_MAX, Z_WAITOK);
+     if (!fw) return -10;
+-    unsigned len = hbt_fw_read(fw, HBT_FW_MAX), commands = 0;
++    unsigned len = 0, commands = 0;
++    for (unsigned retry = 0; retry < 30U; retry++) {
++        len = hbt_fw_read(fw, HBT_FW_MAX);
++        if (len) break;
++        if (retry == 0) printf("HEROLTE BT: waiting for iOS root/HCD file (max 60s)\n");
++        if (retry != 29U) IOSleep(2000);
++    }
+     if (!len) { kfree_data(fw, HBT_FW_MAX); return -11; }
+     if (!hbt_validate_hcd(fw, len, &commands)) {
+         printf("HEROLTE BT: rejected invalid HCD (%u bytes)\n", len);
+@@ -287,6 +293,35 @@
+     0x5555, 0xd555, 0xd5d5, 0xddd5, 0xdddd, 0xdfdd, 0xdfdf, 0xffdf
+ };
+ 
++/* Exynos fractional-slot baud programming shared by bring-up and H4 ioctl.
++ * Only UART1 is touched.  Reject rates that cannot be represented within
++ * three percent by the verified 76.8 MHz parent clock. */
++static int
++hbt_uart_set_baud(vm_offset_t uart, unsigned baud)
++{
++    const uint32_t clock_hz = 76800000U;
++    if (baud < 9600U || baud > 4000000U) return 0;
++    uint32_t div16 = (clock_hz + baud / 2U) / baud;
++    if (div16 < 16U || div16 > (65536U * 16U)) return 0;
++    uint32_t actual = (clock_hz + div16 / 2U) / div16;
++    uint32_t error = actual > baud ? actual - baud : baud - actual;
++    if ((uint64_t)error * 100U > (uint64_t)baud * 3U) return 0;
++    uint32_t whole = div16 / 16U, frac = div16 % 16U;
++    hbt_wr(uart, HBT_UBRDIV, whole - 1U);
++    hbt_wr(uart, HBT_UDIVSLOT, hbt_slot_table[frac]);
++    printf("HEROLTE BT: UART1 baud requested=%u actual=%u div=%u slot=%#x\n",
++        baud, actual, whole - 1U, hbt_slot_table[frac]);
++    return 1;
++}
++
++int
++herolte_bt_hw_set_baud(unsigned baud)
++{
++    /* Do not expose uninitialized UART registers to userspace. */
++    if (!hbt_h4_uart) return 0;
++    return hbt_uart_set_baud(hbt_h4_uart, baud);
++}
++
+ static int
+ hbt_uart1_enable(vm_offset_t cmu, vm_offset_t uart)
+ {
+@@ -316,20 +351,13 @@
+         printf("HEROLTE BT: UART1 gate did not enable\n");
+         return 0;
+     }
+-    /* 16x baud generator. 76.8MHz / 115200 = 666.666; div=40, frac=11. */
+-    const uint32_t clock_hz = 76800000U, baud = 115200U;
+-    uint32_t div16 = (clock_hz + baud / 2) / baud;
+-    uint32_t whole = div16 / 16, frac = div16 % 16;
+-    if (!whole || whole > 65536) return 0;
+     hbt_wr(uart, HBT_ULCON, 0x03U);   /* 8N1 */
+     hbt_wr(uart, HBT_UCON, 0x05U);    /* RX/TX polling */
+-    hbt_wr(uart, HBT_UBRDIV, whole - 1U);
+-    hbt_wr(uart, HBT_UDIVSLOT, hbt_slot_table[frac]);
++    if (!hbt_uart_set_baud(uart, 115200U)) return 0;
+     hbt_wr(uart, HBT_UFCON, 0x07U);  /* clear FIFOs */
+     hbt_wr(uart, HBT_UFCON, 0x01U);  /* FIFO enabled */
+     hbt_wr(uart, HBT_UMCON, 0x10U);  /* RTS/CTS AFC */
+-    printf("HEROLTE BT: UART1 115200 clock=%u div=%u frac=%u slot=%#x ULCON=%#x UCON=%#x\n",
+-        clock_hz, whole - 1U, frac, hbt_slot_table[frac],
++    printf("HEROLTE BT: UART1 initialized ULCON=%#x UCON=%#x\n",
+         hbt_rd(uart, HBT_ULCON), hbt_rd(uart, HBT_UCON));
+     return ((hbt_rd(uart, HBT_ULCON) & 3U) == 3U &&
+             (hbt_rd(uart, HBT_UCON) & 0xFU) == 5U);
+diff --git a/bsd/dev/herolte_bt_h4.c b/bsd/dev/herolte_bt_h4.c
+index 1111111..2222222 100644
+--- a/bsd/dev/herolte_bt_h4.c
++++ b/bsd/dev/herolte_bt_h4.c
+@@ -25,6 +25,7 @@
+ 
+ extern int herolte_bt_hw_tx(const uint8_t *data, unsigned n);
+ extern int herolte_bt_hw_rx(uint8_t *byte);
++extern int herolte_bt_hw_set_baud(unsigned baud);
+ extern void IOSleep(unsigned milliseconds);
+ extern kern_return_t kernel_thread_start(thread_continue_t, void *, thread_t *);
+ 
+@@ -185,6 +186,26 @@
+     mbuf_freem(m);
+     return err;
+ }
++/* ioctls and kernel-control options must change the actual UART baud.
++ * Earlier versions reported 115200 regardless of request, which broke the
++ * iOS baud handoff without warning. The controller must already be ready
++ * to switch speeds before the host changes its divisor. */
++static int h4_set_termios(const struct h4_termios *req)
++{
++    unsigned baud = (unsigned)req->ospeed;
++    if (baud == 0U) baud = 115200U;
++    lck_mtx_lock(&h4_tx_lock);
++    if (!herolte_bt_hw_set_baud(baud)) {
++        lck_mtx_unlock(&h4_tx_lock);
++        return EINVAL;
++    }
++    h4.tio = *req;
++    h4.tio.cflag |= 0x30000ul;
++    h4.tio.ispeed = h4.tio.ospeed = baud;
++    lck_mtx_unlock(&h4_tx_lock);
++    return 0;
++}
++
+ static errno_t h4_getopt(kern_ctl_ref ref, uint32_t unit, void *info, int opt, void *data, size_t *len)
+ {
+     (void)ref; (void)unit; (void)info;
+@@ -201,11 +222,7 @@
+     if (!data || len!=sizeof(h4.tio)) return EINVAL;
+     struct h4_termios req;
+     memcpy(&req,data,sizeof(req));
+-    if (req.ospeed!=115200)
+-        printf("HEROLTE BT H4: termios %lu ignored (controller 115200)\n",req.ospeed);
+-    h4.tio=req; h4.tio.cflag|=0x30000ul;
+-    h4.tio.ispeed=h4.tio.ospeed=115200;
+-    return 0;
++    return h4_set_termios(&req);
+ }
+ static void h4_thread(__unused void *arg, __unused wait_result_t wr)
+ {
+@@ -236,7 +253,8 @@
+     if (minor(dev)>1) return ENXIO;
+     lck_mtx_lock(&h4_lock);
+     if (h4.connected) { lck_mtx_unlock(&h4_lock); return EBUSY; }
+-    h4.connected=true; h4.dev_owner=true; h4.rd=h4.wr=0; h4.epoch++;
++    h4.connected=true; h4.dev_owner=true; h4.rd=h4.wr=0;
++    h4.rx_have=h4.rx_want=0; h4.epoch++;
+     lck_mtx_unlock(&h4_lock);
+     lck_mtx_lock(&h4_tx_lock);
+     h4.tx_have=h4.tx_want=0;
+@@ -306,16 +324,21 @@
+     case TIOCSETAF: {
+         struct h4_termios req;
+         memcpy(&req,data,sizeof(req));
+-        h4.tio=req;
+-        h4.tio.cflag|=0x30000ul;
+-        h4.tio.ispeed=h4.tio.ospeed=115200;
+-        return 0;
++        return h4_set_termios(&req);
+     }
+     case FIONREAD:
+         lck_mtx_lock(&h4_lock);
+         *(int *)data=(int)(h4.wr-h4.rd);
+         lck_mtx_unlock(&h4_lock);
+         return 0;
++    case TIOCFLUSH:
++        /* Drain only our software ring; hardware FIFO stays intact. */
++        lck_mtx_lock(&h4_lock);
++        h4.rd=h4.wr; h4.rx_have=h4.rx_want=0;
++        lck_mtx_unlock(&h4_lock);
++        return 0;
++    case TIOCOUTQ:
++        *(int *)data=0; return 0; /* TX calls are synchronous. */
+     case FIONBIO: case FIOASYNC: case TIOCEXCL: case TIOCNXCL: return 0;
+     default: return ENOTTY;
+     }
+@@ -356,9 +379,9 @@
+     h4.up=true;
+     h4.major=cdevsw_add(-1,&h4_cdevsw);
+     if (h4.major>=0) {
+-        void *a=devfs_make_node(makedev(h4.major,0),DEVFS_CHAR,UID_ROOT,GID_WHEEL,0666,"cu.bluetooth");
+-        void *b=devfs_make_node(makedev(h4.major,1),DEVFS_CHAR,UID_ROOT,GID_WHEEL,0666,"uart.bluetooth");
+-        void *c=devfs_make_node(makedev(h4.major,2),DEVFS_CHAR,UID_ROOT,GID_WHEEL,0666,"btwake");
++        void *a=devfs_make_node(makedev(h4.major,0),DEVFS_CHAR,UID_ROOT,GID_WHEEL,0600,"cu.bluetooth");
++        void *b=devfs_make_node(makedev(h4.major,1),DEVFS_CHAR,UID_ROOT,GID_WHEEL,0600,"uart.bluetooth");
++        void *c=devfs_make_node(makedev(h4.major,2),DEVFS_CHAR,UID_ROOT,GID_WHEEL,0600,"btwake");
+         printf("HEROLTE BT H4: devices cu=%d uart=%d btwake=%d\n",a!=NULL,b!=NULL,c!=NULL);
+     } else printf("HEROLTE BT H4: cdevsw_add failed\n");
