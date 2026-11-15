@@ -59,7 +59,7 @@ diff --git a/bsd/dev/herolte_bt_h4.c b/bsd/dev/herolte_bt_h4.c
 new file mode 100644
 --- /dev/null
 +++ b/bsd/dev/herolte_bt_h4.c
-@@ -0,0 +1,237 @@
+@@ -0,0 +1,371 @@
 +/*
 + * Galaxy S7 Exynos8890 BCM4359: H4 UART kernel-control transport.
 + * Register only after valid firmware patchram and post-firmware HCI test.
@@ -71,7 +71,16 @@ new file mode 100644
 +#include <sys/errno.h>
 +#include <sys/kern_control.h>
 +#include <sys/kpi_mbuf.h>
-+#include <kern/locks.h>
++#include <sys/conf.h>
++#include <sys/uio.h>
++#include <sys/fcntl.h>
++#include <sys/proc.h>
++#include <sys/select.h>
++#include <sys/filio.h>
++#include <sys/ttycom.h>
++#include <sys/termios.h>
++#include <miscfs/devfs/devfs.h>
+++#include <kern/locks.h>
 +#include <kern/thread.h>
 +#include <pexpert/pexpert.h>
 +
@@ -102,8 +111,10 @@ new file mode 100644
 +static struct {
 +    kern_ctl_ref ref;
 +    uint32_t unit, rd, wr, epoch;
-+    bool up, connected;
-+    uint8_t rx[H4_MAX], tx[H4_MAX];
++    bool up, connected, dev_owner;
++    int major;
++    struct selinfo rsel;
+++    uint8_t rx[H4_MAX], tx[H4_MAX];
 +    unsigned rx_have, rx_want, tx_have, tx_want;
 +    uint64_t rx_pkts, tx_pkts, rx_drop, tx_fail;
 +    struct h4_termios tio;
@@ -162,7 +173,7 @@ new file mode 100644
 +        uint32_t unit, epoch, rd;
 +        unsigned n;
 +        lck_mtx_lock(&h4_lock);
-+        if (!h4.connected) { lck_mtx_unlock(&h4_lock); return; }
++        if (!h4.connected || h4.dev_owner) { lck_mtx_unlock(&h4_lock); return; }
 +        ref=h4.ref; unit=h4.unit; epoch=h4.epoch; rd=h4.rd;
 +        n=h4.wr-rd;
 +        if (n>H4_STAGE) n=H4_STAGE;
@@ -215,7 +226,7 @@ new file mode 100644
 +{
 +    (void)ref; (void)unit; (void)info;
 +    lck_mtx_lock(&h4_lock);
-+    h4.connected=false; h4.epoch++; h4.rd=h4.wr=0;
++    h4.connected=false; h4.dev_owner=false; h4.epoch++; h4.rd=h4.wr=0;
 +    lck_mtx_unlock(&h4_lock);
 +    printf("HEROLTE BT H4: closed rx=%llu tx=%llu drop=%llu txerr=%llu\n",
 +        h4.rx_pkts,h4.tx_pkts,h4.rx_drop,h4.tx_fail);
@@ -266,13 +277,129 @@ new file mode 100644
 +            if (!herolte_bt_hw_rx(&c)) break;
 +            lck_mtx_lock(&h4_lock);
 +            h4_rx_feed(c);
++            bool dev_wake = h4.dev_owner;
 +            lck_mtx_unlock(&h4_lock);
-+            traffic=true;
++            if (dev_wake) { selwakeup(&h4.rsel); wakeup(&h4.wr); }
+++            traffic=true;
 +        }
 +        h4_drain();
 +        if (!traffic) IOSleep(1);
 +    }
 +}
++/* POSIX character-device fallback, required by bluetoothd's device discovery:
++ * /dev/cu.bluetooth and /dev/uart.bluetooth (plus optional /dev/btwake).
++ * One client at a time, shared with the kernel-control owner.
++ */
++static int h4_dev_open(dev_t dev, int flags, int type, proc_t p)
++{
++    (void)flags; (void)type; (void)p;
++    if (minor(dev)==2) return 0; /* /dev/btwake, BT_EN stays in kernel */
++    if (minor(dev)>1) return ENXIO;
++    lck_mtx_lock(&h4_lock);
++    if (h4.connected) { lck_mtx_unlock(&h4_lock); return EBUSY; }
++    h4.connected=true; h4.dev_owner=true; h4.rd=h4.wr=0; h4.epoch++;
++    lck_mtx_unlock(&h4_lock);
++    lck_mtx_lock(&h4_tx_lock);
++    h4.tx_have=h4.tx_want=0;
++    lck_mtx_unlock(&h4_tx_lock);
++    printf("HEROLTE BT H4: /dev Bluetooth opened\n");
++    return 0;
++}
++static int h4_dev_close(dev_t dev, int flags, int type, proc_t p)
++{
++    (void)flags; (void)type; (void)p;
++    if (minor(dev)==2) return 0;
++    lck_mtx_lock(&h4_lock);
++    h4.connected=false; h4.dev_owner=false; h4.rd=h4.wr=0; h4.epoch++;
++    lck_mtx_unlock(&h4_lock);
++    wakeup(&h4.wr);
++    selwakeup(&h4.rsel);
++    return 0;
++}
++static int h4_dev_read(dev_t dev, struct uio *uio, int flags)
++{
++    if (minor(dev)>1) return ENODEV;
++    uint8_t buf[1024];
++    int error=0;
++    lck_mtx_lock(&h4_lock);
++    while (h4.dev_owner && h4.wr==h4.rd) {
++        if (flags & IO_NDELAY) { error=EWOULDBLOCK; break; }
++        error=msleep(&h4.wr,&h4_lock,PZERO|PCATCH,"hbtdevrd",NULL);
++        if (error) break;
++    }
++    unsigned n=0;
++    if (!error && h4.dev_owner) {
++        n=h4.wr-h4.rd;
++        if (n>sizeof(buf)) n=sizeof(buf);
++        if (n>(unsigned)uio_resid(uio)) n=(unsigned)uio_resid(uio);
++        for (unsigned i=0;i<n;i++) buf[i]=h4_ring[(h4.rd+i)&H4_MASK];
++        h4.rd+=n;
++    } else if (!error) error=EIO;
++    lck_mtx_unlock(&h4_lock);
++    if (!error && n) error=uiomove((char *)buf,(int)n,uio);
++    return error;
++}
++static int h4_dev_write(dev_t dev, struct uio *uio, int flags)
++{
++    (void)flags;
++    if (minor(dev)>1) return ENODEV;
++    uint8_t buf[1024];
++    int error=0;
++    while (uio_resid(uio)>0 && !error) {
++        int n=(int)MIN((user_ssize_t)sizeof(buf),uio_resid(uio));
++        error=uiomove((char *)buf,n,uio);
++        if (error) break;
++        lck_mtx_lock(&h4_tx_lock);
++        for (int i=0;i<n && !error;i++) error=h4_tx_feed(buf[i]);
++        lck_mtx_unlock(&h4_tx_lock);
++    }
++    return error;
++}
++static int h4_dev_ioctl(dev_t dev, u_long cmd, caddr_t data, int flags, proc_t p)
++{
++    (void)flags; (void)p;
++    if (minor(dev)>1) return ENOTTY;
++    switch (cmd) {
++    case TIOCGETA:
++        memcpy(data,&h4.tio,sizeof(h4.tio)); return 0;
++    case TIOCSETA:
++    case TIOCSETAW:
++    case TIOCSETAF: {
++        struct h4_termios req;
++        memcpy(&req,data,sizeof(req));
++        h4.tio=req;
++        h4.tio.cflag|=0x30000ul;
++        h4.tio.ispeed=h4.tio.ospeed=115200;
++        return 0;
++    }
++    case FIONREAD:
++        lck_mtx_lock(&h4_lock);
++        *(int *)data=(int)(h4.wr-h4.rd);
++        lck_mtx_unlock(&h4_lock);
++        return 0;
++    case FIONBIO: case FIOASYNC: case TIOCEXCL: case TIOCNXCL: return 0;
++    default: return ENOTTY;
++    }
++}
++static int h4_dev_select(dev_t dev, int which, void *wql, proc_t p)
++{
++    if (minor(dev)>1) return 0;
++    int ready=0;
++    lck_mtx_lock(&h4_lock);
++    if (which==FREAD) {
++        ready=h4.wr!=h4.rd || !h4.dev_owner;
++        if (!ready) selrecord(p,&h4.rsel,wql);
++    } else if (which==FWRITE) ready=1;
++    lck_mtx_unlock(&h4_lock);
++    return ready;
++}
++static const struct cdevsw h4_cdevsw = {
++    .d_open=h4_dev_open,.d_close=h4_dev_close,.d_read=h4_dev_read,
++    .d_write=h4_dev_write,.d_ioctl=h4_dev_ioctl,.d_stop=eno_stop,
++    .d_reset=eno_reset,.d_ttys=NULL,.d_select=h4_dev_select,
++    .d_mmap=eno_mmap,.d_strategy=eno_strat,.d_type=0,
++};
++
 +int herolte_bt_h4_start(void)
 +{
 +    if (h4.up) return 0;
@@ -288,6 +415,13 @@ new file mode 100644
 +    errno_t rc=ctl_register(&reg,&h4.ref);
 +    if (rc) { printf("HEROLTE BT H4: ctl_register error %d\n",rc); return rc; }
 +    h4.up=true;
++    h4.major=cdevsw_add(-1,&h4_cdevsw);
++    if (h4.major>=0) {
++        void *a=devfs_make_node(makedev(h4.major,0),DEVFS_CHAR,UID_ROOT,GID_WHEEL,0666,"cu.bluetooth");
++        void *b=devfs_make_node(makedev(h4.major,1),DEVFS_CHAR,UID_ROOT,GID_WHEEL,0666,"uart.bluetooth");
++        void *c=devfs_make_node(makedev(h4.major,2),DEVFS_CHAR,UID_ROOT,GID_WHEEL,0666,"btwake");
++        printf("HEROLTE BT H4: devices cu=%d uart=%d btwake=%d\n",a!=NULL,b!=NULL,c!=NULL);
++    } else printf("HEROLTE BT H4: cdevsw_add failed\n");
 +    thread_t t;
 +    if (kernel_thread_start(h4_thread,NULL,&t)!=KERN_SUCCESS) {
 +        h4.up=false; ctl_deregister(h4.ref); return EIO;
