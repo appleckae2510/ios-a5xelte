@@ -113,7 +113,7 @@ void hero_fb_hex(unsigned row, const char *label, uint64_t value)
 void
 hero_fb_splash(void)
 {
-    static const char *const lines[] = {
+    static const char lines[][37] = {
         "+--------------+-------------------+",
         "|        XNU LOADER CREDITS        |",
         "+--------------+-------------------+",
