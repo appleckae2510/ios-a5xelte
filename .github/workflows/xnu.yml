@@ -19,7 +19,7 @@ on:
         description: GitHub runner image (empty = macos-15-intel)
         default: ""
   push:
-    branches: [main, herolte, codex/a5xelte-bringup]
+    branches: [main, herolte, codex/a5xelte-bringup, experiment/notefe-bluetooth-crossport]
     paths:
       - "xnu/patches/**"
       - ".github/workflows/xnu.yml"
@@ -122,6 +122,22 @@ jobs:
           grep -q 'TIOCFLUSH' dxb/xnu/bsd/dev/herolte_bt_h4.c || { echo "::error::Bluetooth 0339 H4 ioctl changes missing"; exit 1; }
           grep -q 'UART1 oscclk mux ready' dxb/xnu/bsd/dev/herolte_bt.c || { echo "::error::Bluetooth 0340 mux status fix missing"; exit 1; }
           echo "Bluetooth H4 source and XNU build rule confirmed"
+          # Experimental Note FE reference, only on the cross-port branch.
+          if [ "$GITHUB_REF_NAME" = "experiment/notefe-bluetooth-crossport" ]; then
+            if grep -E 'Skipping patch .*0341-herolte-notefe-uart-clock-fraction[.]patch' build.log; then
+              echo "::error::Experimental Note FE UART1 patch was skipped"
+              exit 1
+            fi
+            grep -q 'hbt_top_uart1_rate' dxb/xnu/bsd/dev/herolte_bt.c || {
+              echo "::error::Expected TOP UART1 parent rate code missing"
+              exit 1
+            }
+            grep -q 'UFRACVAL: direct fraction' dxb/xnu/bsd/dev/herolte_bt.c || {
+              echo "::error::Expected Exynos8890 UART1 fraction fix missing"
+              exit 1
+            }
+            echo "Experimental Note FE UART1 clock/fraction source confirmed"
+          fi
 
       # Logs need a GitHub sign-in to read; check-run annotations are public.
       # Publish the first errors and the log tail so failures can be read
