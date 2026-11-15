@@ -19,6 +19,8 @@
 * DMA reserved memory: `/reserved-memory/camera` at `0xd0800000` with length `0x0e400000`, **never use it for capture until all S7 reserved/secure memory overlaps and mappings are checked**.
 * The S7 DT also contains `/phy_cam1_csi@145F1050` and `/iommu-domain_fimc-is/sysmmu@0x141E0000`, matching Note FE's CSI family.
 
+The SM-G930F image contains three revision-specific DTBs (at DTBH offsets 0x800, 0x2f800 and 0x5e800). All three were inspected: they agree on front sensor ID, CSI channel, I2C address, MCLK channel and reset/standby pin indices. GPIO *phandle* numbers differ between DTBs, which is expected; do not hard-code those phandle numbers as physical addresses.
+
 ## Integrated into XNU
 
 `xnu/patches/0347-herolte-camera-front-readonly-preflight.patch` adds `herocam=1` as an optional early *read-only* probe:
