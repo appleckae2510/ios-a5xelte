@@ -20,6 +20,7 @@ struct glyph { char ch; uint8_t rows[7]; };
 static const struct glyph font[] = {
     {' ',{0,0,0,0,0,0,0}}, {'-',{0,0,0,31,0,0,0}},
     {':',{0,4,4,0,4,4,0}}, {'?',{14,17,1,2,4,0,4}},
+    {'+',{0,4,4,31,4,4,0}}, {'|',{4,4,4,4,4,4,4}},
     {'.',{0,0,0,0,0,12,12}}, {'=',{0,0,31,0,31,0,0}},
     {'0',{14,17,19,21,25,17,14}}, {'1',{4,12,4,4,4,4,14}},
     {'2',{14,17,1,2,4,8,31}}, {'3',{30,1,1,14,1,1,30}},
@@ -106,41 +107,47 @@ void hero_fb_hex(unsigned row, const char *label, uint64_t value)
 }
 
 
-/* Clean black boot screen, with a centered white, bitten-apple silhouette.
- * Stage progress stays in LOG_BASE; failure text can still draw over black.
- * No MMU, heap, PNG decoder, floating point or storage dependency. */
-static int
-hfb_ellipse(int x, int y, int cx, int cy, int rx, int ry)
-{
-    int64_t dx = (int64_t)x - cx, dy = (int64_t)y - cy;
-    return dx * dx * ry * ry + dy * dy * rx * rx <= (int64_t)rx * rx * ry * ry;
-}
-
-static int
-hfb_logo_pixel(int x, int y)
-{
-    int body = hfb_ellipse(x,y,-41,15,77,116) ||
-        hfb_ellipse(x,y,43,15,76,116) ||
-        hfb_ellipse(x,y,0,38,93,100);
-    int bite = hfb_ellipse(x,y,113,-19,48,48);
-    int notch = hfb_ellipse(x,y,0,-94,24,31);
-    int u = 3*(x-23)-2*(y+157), v = 2*(x-23)+3*(y+157);
-    int leaf = ((int64_t)u*u*45*45 + (int64_t)v*v*145*145 <=
-        (int64_t)145*145*45*45);
-    return (body && !bite && !notch) || leaf;
-}
-
+/* Text-only, centered ASCII credits. No logo, heap, fonts beyond the
+ * built-in 5x7 glyphs, or external dependencies. This runs MMU-off.
+ * The boot splash remains on screen until XNU takes over the display. */
 void
 hero_fb_splash(void)
 {
+    static const char *const lines[] = {
+        "+--------------+-------------------+",
+        "|        XNU LOADER CREDITS        |",
+        "+--------------+-------------------+",
+        "|IOS-SWEET     |DIPA-STUDIO        |",
+        "|A5XELTE PORT  |ORHUNNX            |",
+        "|EXTENDED BY   |APPLECAKE2510      |",
+        "+--------------+-------------------+"
+    };
+    const unsigned nlines = sizeof(lines) / sizeof(lines[0]);
     volatile uint32_t *fb = (volatile uint32_t *)HERO_FB_BASE;
-    for (unsigned y=0; y<HERO_FB_HEIGHT; ++y)
-        for (unsigned x=0; x<HERO_FB_WIDTH; ++x)
-            fb[y*HERO_FB_WIDTH+x] = 0xff000000u;
-    const int x0=(int)HERO_FB_WIDTH/2, y0=(int)HERO_FB_HEIGHT/2;
-    for (int y=-210; y<=165; ++y)
-        for (int x=-143; x<=143; ++x)
-            if (hfb_logo_pixel(x,y))
-                fb[(unsigned)(y0+y)*HERO_FB_WIDTH+(unsigned)(x0+x)] = 0xffffffffu;
+    for (unsigned y = 0; y < HERO_FB_HEIGHT; ++y)
+        for (unsigned x = 0; x < HERO_FB_WIDTH; ++x)
+            fb[y * HERO_FB_WIDTH + x] = 0xff000000U;
+
+    const unsigned start_y = (HERO_FB_HEIGHT - nlines * CELL_H) / 2U;
+    for (unsigned row = 0; row < nlines; ++row) {
+        const char *s = lines[row];
+        unsigned n = 0;
+        while (s[n]) ++n;
+        unsigned width = n * CELL_W;
+        if (width > HERO_FB_WIDTH) continue;
+        unsigned left = (HERO_FB_WIDTH - width) / 2U;
+        unsigned top = start_y + row * CELL_H + 2U * SCALE;
+        for (unsigned col = 0; col < n; ++col) {
+            const uint8_t *g = glyph_for(s[col]);
+            for (unsigned gy = 0; gy < 7; ++gy)
+                for (unsigned gx = 0; gx < 5; ++gx) {
+                    if (!(g[gy] & (1U << (4U - gx)))) continue;
+                    for (unsigned sy = 0; sy < SCALE; ++sy)
+                        for (unsigned sx = 0; sx < SCALE; ++sx)
+                            fb[(top + gy * SCALE + sy) * HERO_FB_WIDTH +
+                               left + col * CELL_W + gx * SCALE + sx] = 0xffffffffU;
+                }
+        }
+    }
     __asm__ volatile ("dsb sy" : : : "memory");
 }
