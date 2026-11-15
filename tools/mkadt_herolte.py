@@ -156,6 +156,16 @@ def build(canvas=(FB_WIDTH, FB_HEIGHT), dram=(DRAM_BASE, DRAM_SIZE), scale=3):
         ('device_type', mkadt.cstr('wlan')),
         ('compatible', mkadt.cstr('herolte,bcm4359')),
     ]))
+    # Darwin bluetoothd/BlueTool discover the H4 controller via this node.
+    # This provisional address is locally administered; match it to the
+    # phone's actual HCI BD_ADDR before pairing is treated as verified.
+    arm_io.children.append(mkadt.node('bluetooth', [
+        ('device_type', mkadt.cstr('bluetooth')),
+        ('compatible', mkadt.cstr('herolte,bcm4359') + mkadt.cstr('bluetooth')),
+        ('local-mac-address', bytes((0x02, 0x48, 0x45, 0x52, 0x4f, 0x02))),
+        ('transport-encoding', mkadt.u32(3)),  # H4BC
+        ('transport-speed', mkadt.u32(115200)),
+    ]))
     root.children = [n for n in root.children if n.prop('name') not in
                      (mkadt.cstr('sweet-fbcon'), mkadt.cstr('sweet-ufs'))]
     # Exynos 8890 UFSHCI (exynos8890.dtsi ufs@0x155A0000): standard HCI at
