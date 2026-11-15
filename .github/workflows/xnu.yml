@@ -19,7 +19,7 @@ on:
         description: GitHub runner image (empty = macos-15-intel)
         default: ""
   push:
-    branches: [main, herolte, codex/a5xelte-bringup, experiment/notefe-bluetooth-crossport]
+    branches: [main, herolte, codex/a5xelte-bringup, experiment/notefe-bluetooth-crossport, experiment/wardevsa-s7-hardware]
     paths:
       - "xnu/patches/**"
       - ".github/workflows/xnu.yml"
@@ -123,7 +123,7 @@ jobs:
           echo "Bluetooth H4 source and XNU build rule confirmed"
           # 0341 replaces 0340's debug message on the experimental branch;
           # do not fail that branch just because the old log string is gone.
-          if [ "$GITHUB_REF_NAME" = "experiment/notefe-bluetooth-crossport" ]; then
+          if [ "$GITHUB_REF_NAME" = "experiment/notefe-bluetooth-crossport" ] || [ "$GITHUB_REF_NAME" = "experiment/wardevsa-s7-hardware" ]; then
             if grep -E 'Skipping patch .*0341-herolte-notefe-uart-clock-fraction[.]patch' build.log; then
               echo "::error::Experimental Note FE UART1 patch was skipped"
               exit 1
@@ -146,6 +146,19 @@ jobs:
               echo "::error::Bluetooth 0340 mux status fix missing"
               exit 1
             }
+          fi
+          # Ensure all five source patches landed; the upstream helper may skip a rejected patch.
+          if [ "$GITHUB_REF_NAME" = "experiment/wardevsa-s7-hardware" ]; then
+            if grep -E 'Skipping patch .*034[2-6]-herolte-.*[.]patch' build.log; then
+              echo "::error::Mandatory Wardevsa hardware patch skipped"; exit 1
+            fi
+            grep -q 'hg_vgr0_early' dxb/xnu/bsd/dev/herolte_gpu.c || { echo "::error::0342 VGR0 fix missing"; exit 1; }
+            grep -q 'HEROLTE VGR0 PRESENT:' dxb/xnu/bsd/dev/herolte_gpu.c || { echo "::error::0343 VGR0 presentation missing"; exit 1; }
+            grep -q 'hakios-haptic' dxb/xnu/bsd/dev/herolte_battery.c || { echo "::error::0344 haptic driver missing"; exit 1; }
+            grep -q 'HEROLTE MFC:' dxb/xnu/bsd/dev/herolte_gpu.c || { echo "::error::0345 MFC probe missing"; exit 1; }
+            grep -q 'PWM_TCFG0' dxb/xnu/bsd/dev/herolte_battery.c || { echo "::error::0346 PWM fix missing"; exit 1; }
+            grep -q 'uint32_t test = 0;' dxb/xnu/bsd/dev/herolte_battery.c || { echo "::error::haptic auto-test not disabled"; exit 1; }
+            echo "All five Wardevsa source changes and safe haptics default verified"
           fi
 
       # Logs need a GitHub sign-in to read; check-run annotations are public.
