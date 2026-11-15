@@ -122,8 +122,8 @@ index 099526b..29d195a 100644
  					printf("HEROLTE DISP1: sysmmu ctrl %#x cfg %#x status %#x version %#x\n", hg_rd(mmu1, 0x0),
  					    hg_rd(mmu1, 0x4), hg_rd(mmu1, 0x8), hg_rd(mmu1, 0x34));
  				}
-+				/* (0336) boot-arg herovgr=0 leaves VGR0 alone */
-+				uint32_t vgr_test = 1;
++				/* Production default: no 8-second four-colour VGR0 test. Enable only via herovgr=1. */
++				uint32_t vgr_test = 0;
 +				PE_parse_boot_argn("herovgr", &vgr_test, sizeof(vgr_test));
 +				if (vgr_test && vgr0 && mmu1) {
 +					hg_msleep(10000);

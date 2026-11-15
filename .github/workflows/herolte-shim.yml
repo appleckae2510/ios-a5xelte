@@ -1,0 +1,36 @@
+name: herolte-loader
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [herolte]
+    paths:
+      - "shim/herolte/**"
+      - "shim/fdt.c"
+      - "shim/fdt.h"
+      - ".github/workflows/herolte-shim.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cross compiler
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+      - name: Compile S7 S-Boot shim
+        run: CROSS=aarch64-linux-gnu- sh shim/herolte/build.sh
+      - name: Verify Image header
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for kind in ("xnu_boot","probe"):
+              data=Path("shim/herolte/out/"+kind+".Image").read_bytes()
+              assert data[56:60]==b"ARMd"
+              assert 4096 <= len(data) < 1024*1024
+              print(kind, len(data))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: herolte-loader-apple-splash
+          path: shim/herolte/out/xnu_boot.Image
+          if-no-files-found: error

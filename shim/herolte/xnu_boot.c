@@ -123,7 +123,7 @@ uintptr_t hero_prepare_xnu(uintptr_t fdt, volatile uint64_t *log, uint64_t el, u
 {
     uint64_t rd_start, rd_end;
     log[77] = hero_fb_enable();
-    hero_fb_text(0, "HEROLTE XNU LOADER");
+    hero_fb_splash();
     if (el != 4)
         return fail(log, -10, "NOT EL1");
     if (sctlr & 1)
@@ -160,7 +160,6 @@ uintptr_t hero_prepare_xnu(uintptr_t fdt, volatile uint64_t *log, uint64_t el, u
         !p->mem_size || p->mem_size > window_end - p->phys_base ||
         p->entry_va < p->virt_base || p->kernel_end < p->virt_base)
         return fail(log, -3, "PAYLOAD RAM OUTSIDE WINDOW");
-    hero_fb_hex(2, "RAM BASE", p->phys_base);
     log[13] = p->phys_base;
     log[14] = p->mem_size;
     uintptr_t memory_end = p->phys_base + p->mem_size;
@@ -168,7 +167,6 @@ uintptr_t hero_prepare_xnu(uintptr_t fdt, volatile uint64_t *log, uint64_t el, u
     if (kernel_end >= memory_end)
         return fail(log, -3, "KERNEL TOO LARGE");
 
-    hero_fb_text(1, "COPYING KERNEL");
     for (uint32_t i = 0; i < p->nsegs; ++i) {
         const struct payload_seg *s = &p->segs[i];
         if (s->vmaddr < p->virt_base || s->file_size > s->vmsize ||
@@ -208,9 +206,6 @@ uintptr_t hero_prepare_xnu(uintptr_t fdt, volatile uint64_t *log, uint64_t el, u
     log[16] = p->nsegs;
     log[17] = ba_pa;
     log[10] = 5;
-    hero_fb_hex(1, "ENTRY", entry_pa);
-    hero_fb_hex(2, "BOOTARGS", ba_pa);
-    hero_fb_text(3, "JUMP TO XNU");
     clean_bytes(LOG_BASE, LOG_BASE + PAGE_SIZE);
     __asm__ volatile("ic iallu; dsb sy; isb" : : : "memory");
     return entry_pa;
