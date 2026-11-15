@@ -108,7 +108,7 @@ jobs:
       - name: Assert herolte H4 Bluetooth patch was compiled
         if: env.MACHINE_CONFIG == 'HEROLTE'
         run: |
-          if grep -E 'Skipping patch .*033(8-herolte-bluetooth-h4-kctl|9-herolte-bt-serial-fixes)\\.patch' build.log; then
+          if grep -E 'Skipping patch .*033(8-herolte-bluetooth-h4-kctl|9-herolte-bt-serial-fixes)[.]patch' build.log; then
             echo "::error::Mandatory Bluetooth H4 patch was skipped"
             exit 1
           fi
