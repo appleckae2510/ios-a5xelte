@@ -9,7 +9,8 @@ diff --git a/bsd/conf/files b/bsd/conf/files
 diff --git a/bsd/dev/herolte_bt.c b/bsd/dev/herolte_bt.c
 --- a/bsd/dev/herolte_bt.c
 +++ b/bsd/dev/herolte_bt.c
-@@ -1,423 +1,449 @@
+@@ -1,424 +1,450 @@
+-/*
 - * Experimental Galaxy S7 / Exynos8890 BCM4359 HCI UART bring-up.
 - * Built into XNU; NOT a full IOBluetooth driver.  Default is OFF.
 - *  herobt=0: off (default); no mappings, no writes.
@@ -433,6 +434,7 @@ diff --git a/bsd/dev/herolte_bt.c b/bsd/dev/herolte_bt.c
 -    printf("HEROLTE BT: active probe done; BT_EN set LOW, no iOS stack exposed\n");
 -}
 -#endif /* ARM64_BOARD_CONFIG_HEROLTE */
++/*
 + * Experimental Galaxy S7 / Exynos8890 BCM4359 HCI UART bring-up.
 + * Built into XNU; NOT a full IOBluetooth driver.  Default is OFF.
 + *  herobt=0: off (default); no mappings, no writes.
