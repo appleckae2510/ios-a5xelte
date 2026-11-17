@@ -1,3 +1,15 @@
+# A3Y17LTE compile handoff — 2026-11-17
+
+Preparing an A3-only XNU build on experiment/a3y17lte-xnu-20261117. The workflow
+fetches the pinned J7 donor f11e5d503398d814813899ffe531ad6521521b51 and layers
+0400-a3y17lte-entry-display-input.patch on top, using shared A5XELTE config.
+The runner is macos-15-intel, verified in this account's recent successful S7 CI.
+Source preparation and local loader/protocol checks passed; full XNU compilation
+has not completed yet. No phone is connected, flashed or claimed bootable.
+A3 details are in A3Y17LTE_PROGRESS.md. Existing donor notes follow unchanged.
+
+---
+
 # iOS 16 on sweet (Redmi Note 10 Pro, SM7150) - working notes
 
 ## Agent handoff / active work (2026-10-15, latest)

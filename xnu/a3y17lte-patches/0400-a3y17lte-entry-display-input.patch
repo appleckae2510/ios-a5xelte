@@ -1,0 +1,364 @@
+diff --git a/pexpert/pexpert/arm64/A5XELTE.h b/pexpert/pexpert/arm64/A5XELTE.h
+--- a/pexpert/pexpert/arm64/A5XELTE.h
++++ b/pexpert/pexpert/arm64/A5XELTE.h
+@@ -29,16 +29,17 @@
+ /* S-Boot starts on the Cortex-A53 "Apollo" cluster, Aff1 = 1. */
+ #define A5XELTE_BOOT_MPIDR            0x100
+ #else
++#define A3Y17LTE 1
+ /* Exynos7870/7580: logical 0..3 = MPIDR 0..3 (boot cluster), 4..7 = MPIDR 0x100..0x103. */
+ #define SWEET_SMP_MAX_CPUS            8
+ #define A5XELTE_FB_PA                 0x67000000
+-#define A5XELTE_FB_WIDTH              1080
+-#define A5XELTE_FB_HEIGHT             1920
+-#define A5XELTE_FB_STRIDE             4320
+-#define A5XELTE_FB_BLOCKS             5
+-#define A5XELTE_FB_TEXT_SCALE         2
+-#define A5XELTE_FB_DOT_PITCH          424   /* 1080 pixels across 5.2 inches */
+-#define A5XELTE_MARKER_PA             0x469ff100
++#define A5XELTE_FB_WIDTH              720
++#define A5XELTE_FB_HEIGHT             1280
++#define A5XELTE_FB_STRIDE             2880
++#define A5XELTE_FB_BLOCKS             2
++#define A5XELTE_FB_TEXT_SCALE         1
++#define A5XELTE_FB_DOT_PITCH          312   /* A3 720x1280 panel, 4.7 inches */
++#define A5XELTE_MARKER_PA             0x679ff100
+ #define A5XELTE_BOOT_MPIDR            0x0
+ #endif
+ 
+diff --git a/bsd/dev/a5xelte_touch.c b/bsd/dev/a5xelte_touch.c
+--- a/bsd/dev/a5xelte_touch.c
++++ b/bsd/dev/a5xelte_touch.c
+@@ -12,6 +12,7 @@
+ #include <kern/sched_prim.h>
+ #include <machine/machine_routines.h>
+ #include <pexpert/pexpert.h>
++#include <pexpert/arm64/board_config.h>
+ 
+ extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+ extern void thread_terminate_self(void);
+@@ -1255,9 +1256,15 @@
+ }
+ 
+ 
++#include "a3_touch.inc"
++
+ void
+ a5xelte_touch_probe(void)
+ {
++#if defined(A3Y17LTE)
++    a3y17lte_touch_start();
++    return;
++#endif
+ 	int enabled = 1;
+ 	int log_contacts = 0;
+ 	int bus_trial = 0;
+diff --git a/bsd/dev/a5xelte_keys.c b/bsd/dev/a5xelte_keys.c
+--- a/bsd/dev/a5xelte_keys.c
++++ b/bsd/dev/a5xelte_keys.c
+@@ -257,7 +257,7 @@
+ 	}
+ 	a5_keys_started = true;
+ 	{
+-		int j7hw = 0;
++		int j7hw = 1; /* A3 uses the source-confirmed Exynos7870 key layout. */
+ 		(void)PE_parse_boot_argn("j7hw", &j7hw, sizeof(j7hw));
+ 		if (j7hw) {
+ 			j7prime_keys_init();
+diff --git a/bsd/dev/a5xelte_battery.c b/bsd/dev/a5xelte_battery.c
+--- a/bsd/dev/a5xelte_battery.c
++++ b/bsd/dev/a5xelte_battery.c
+@@ -201,7 +201,7 @@
+ int
+ a5xelte_fg_init(void)
+ {
+-	int enabled = 1;
++	int enabled = 0; /* No J7 bus scanning on the A3 entry profile. */
+ 
+ 	(void)PE_parse_boot_argn("j7fg", &enabled, sizeof(enabled));
+ 	if (!enabled) {
+diff --git a/bsd/dev/a5xelte_emmc.c b/bsd/dev/a5xelte_emmc.c
+--- a/bsd/dev/a5xelte_emmc.c
++++ b/bsd/dev/a5xelte_emmc.c
+@@ -21,6 +21,7 @@
+ #include <kern/locks.h>
+ #include <kern/sched_prim.h>
+ #include <pexpert/pexpert.h>
++#include <pexpert/arm64/board_config.h>
+ #include <pexpert/device_tree.h>
+ #include <libkern/libkern.h>
+ #include <machine/atomic.h>
+@@ -389,6 +390,9 @@
+ static int
+ emmc_write_sector(uint32_t lba, const uint8_t *sector)
+ {
++#if defined(A3Y17LTE)
++	return EROFS; /* Entry-stage kernel cannot write any eMMC sector. */
++#endif
+ 	uint64_t data[64];
+ 	uint32_t hcon = emmc_rd(EMMC_HCON);
+ 	uint32_t width = (hcon >> 7) & 7u;
+diff --git a/iokit/Kernel/arm/hid/SweetHID.cpp b/iokit/Kernel/arm/hid/SweetHID.cpp
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -448,8 +448,8 @@
+ 		fLogicalH = 2560;
+ 	}
+ #elif defined(ARM64_BOARD_CONFIG_A5XELTE)
+-	fPanelW = fLogicalW = 1080;
+-	fPanelH = fLogicalH = 1920;
++	fPanelW = fLogicalW = 720;
++	fPanelH = fLogicalH = 1280;
+ #else
+ 	fPanelW = 1080;
+ 	fPanelH = 2400;
+@@ -464,11 +464,11 @@
+ 	setProperty("SurfaceWidth", (unsigned long long)(64 << 16), 32);	/* mm, 16.16 */
+ 	setProperty("SurfaceHeight", (unsigned long long)(113 << 16), 32);
+ #else
+-	setProperty("SurfaceWidth", (unsigned long long)(68 << 16), 32);	/* mm, 16.16 */
++	setProperty("SurfaceWidth", (unsigned long long)(59 << 16), 32);	/* mm, 16.16 */
+ #endif
+ #if defined(ARM64_BOARD_CONFIG_HEROLTE)
+ #elif defined(ARM64_BOARD_CONFIG_A5XELTE)
+-	setProperty("SurfaceHeight", (unsigned long long)(121 << 16), 32);
++	setProperty("SurfaceHeight", (unsigned long long)(105 << 16), 32);
+ #else
+ 	setProperty("SurfaceHeight", (unsigned long long)(151 << 16), 32);
+ #endif
+diff --git a/bsd/dev/a3_touch.inc b/bsd/dev/a3_touch.inc
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/a3_touch.inc
+@@ -0,0 +1,168 @@
++/* SPDX-License-Identifier: GPL-2.0-only
++ * Experimental A3 IST3038H path included in a5xelte_touch.c by the A3-only patch.
++ * Reuses bounded S3C I2C register helpers. Assumes clock, GPC2 mux and tsp_avdd
++ * are already on; does not guess PMIC settings, reset or reflash the controller.
++ * a3touch=1 opts in. The initial entry profile leaves this disabled.
++ */
++#if defined(A3Y17LTE)
++#include "ist3038h_protocol.h"
++static vm_offset_t a3t_bus, a3t_alive;
++static uint16_t a3t_mask, a3t_x[A3_IST_FINGERS], a3t_y[A3_IST_FINGERS];
++
++static bool a3t_step(void)
++{
++    a5touch_clear_irq(a3t_bus);
++    return a5touch_wait_irq(a3t_bus);
++}
++
++static void a3t_stop(void)
++{
++    a5touch_write(a3t_bus, 4, a5touch_read(a3t_bus, 4) & ~0x20u);
++    a5touch_clear_irq(a3t_bus);
++    for (unsigned i = 0; i < 1000; ++i) {
++        if (!(a5touch_read(a3t_bus, 4) & 0x20u)) break;
++        delay(1);
++    }
++}
++
++/* Combined write + repeated START + read, matching Linux i2c_transfer(2 msgs).
++ * IST addresses and words are big endian, unlike Synaptics byte registers. */
++static bool a3t_transfer(const uint8_t *tx, unsigned ntx, uint8_t *rx, unsigned nrx)
++{
++    if (!ntx || ntx > 8 || nrx > 40) return false;
++    if (a5touch_read(a3t_bus, 4) & 0x20u) return false;
++    bool ok = false;
++    a5touch_write(a3t_bus, 0, 0xe3u);
++    a5touch_write(a3t_bus, 0x10, 7u);
++    a5touch_write(a3t_bus, 4, 0xd0u);
++    a5touch_write(a3t_bus, 0xc, 0xa0u);
++    a5touch_write(a3t_bus, 4, 0xf0u);
++    if (!a5touch_wait_irq(a3t_bus) || (a5touch_read(a3t_bus, 4) & 1u)) goto out;
++    for (unsigned i = 0; i < ntx; ++i) {
++        a5touch_write(a3t_bus, 0xc, tx[i]);
++        if (!a3t_step() || (a5touch_read(a3t_bus, 4) & 1u)) goto out;
++    }
++    if (nrx) {
++        a5touch_write(a3t_bus, 0xc, 0xa1u);
++        a5touch_write(a3t_bus, 4, 0xb0u);
++        if (!a3t_step() || (a5touch_read(a3t_bus, 4) & 1u)) goto out;
++        for (unsigned i = 0; i < nrx; ++i) {
++            if (i + 1 == nrx) a5touch_write(a3t_bus, 0, 0x63u);
++            if (!a3t_step()) goto out;
++            rx[i] = (uint8_t)a5touch_read(a3t_bus, 0xc);
++        }
++    }
++    ok = true;
++out:
++    a3t_stop();
++    return ok;
++}
++
++static void a3t_put32(uint8_t *b, uint32_t w)
++{
++    for (unsigned i = 0; i < 4; ++i) b[i] = (uint8_t)(w >> (24 - 8 * i));
++}
++
++static bool a3t_read(uint32_t reg, uint32_t *words, unsigned count)
++{
++    uint8_t tx[4], rx[40];
++    if (!count || count > 10) return false;
++    a3t_put32(tx, reg);
++    if (!a3t_transfer(tx, 4, rx, 4 * count)) return false;
++    for (unsigned i = 0; i < count; ++i) words[i] = a3_ist_be32(rx + 4 * i);
++    return true;
++}
++
++static void a3t_release(void)
++{
++    for (unsigned i = 0; i < A3_IST_FINGERS; ++i)
++        if (a3t_mask & (1u << i)) sweet_hid_touch((int)i, 0, a3t_x[i], a3t_y[i]);
++    a3t_mask = 0;
++}
++
++static void a3t_thread(void *arg, wait_result_t result)
++{
++    (void)arg; (void)result;
++    uint32_t chip = 0;
++    uint8_t tx[8];
++    unsigned failures = 0, invalid = 0;
++    j7t_sleep_ms(3000);
++    a3t_bus = ml_io_map(0x13890000u, 0x1000);
++    a3t_alive = ml_io_map(0x139f0000u, 0x1000);
++    vm_offset_t pins = ml_io_map(0x139c0000u, 0x1000);
++    if (!a3t_bus || !a3t_alive || !pins) goto done;
++    if ((a5touch_read(pins, 0) & 0xffu) != 0x22u) {
++        printf("A3 TOUCH: GPC2 not in I2C mode; live mux/clock/rail evidence needed\n");
++        goto done;
++    }
++    if (!a3t_read(A3_IST_CHIP_ID_REG, &chip, 1) || (chip & 0xffffu) != 0x038du) {
++        printf("A3 TOUCH: IST3038H not responding (chip=%#x); tsp_avdd/clock handoff unresolved\n", chip);
++        goto done;
++    }
++    printf("A3 TOUCH: IST3038H chip=%#x; experimental scan start\n", chip);
++    a3t_put32(tx, A3_IST_CMD_REG);
++    a3t_put32(tx + 4, 0x00010001u); /* eHCOM_FW_START / enable, volatile command */
++    if (!a3t_transfer(tx, 8, NULL, 0)) goto done;
++    j7t_sleep_ms(40);
++    for (;;) {
++        if (a5touch_read(a3t_alive, 0x44) & (1u << 6)) {
++            j7t_sleep_ms(8);
++            continue;
++        }
++        uint32_t words[11] = {0};
++        struct a3_ist_frame frame;
++        if (!a3t_read(A3_IST_INTR_REG, words, 1)) {
++            if (++failures >= 8) break;
++            j7t_sleep_ms(20);
++            continue;
++        }
++        unsigned n = (words[0] >> 12) & 15u;
++        if (a3_ist_decode(words, 1, &frame) == 0) {
++            if (words[0] == 0x8ead8eadu) a3t_release();
++            j7t_sleep_ms(8);
++            continue;
++        }
++        if (n > 10 || !(words[0] & 0x800u)) {
++            if (++invalid >= 100) break;
++            j7t_sleep_ms(8); continue;
++        }
++        if (n && !a3t_read(A3_IST_COORD_BURST_REG, words + 1, n)) {
++            if (++failures >= 8) break;
++            j7t_sleep_ms(20);
++            continue;
++        }
++        failures = 0;
++        int rc = a3_ist_decode(words, n + 1, &frame);
++        if (rc == 1) {
++            for (unsigned i = 0; i < A3_IST_FINGERS; ++i) {
++                bool down = (frame.mask & (1u << i)) != 0;
++                if (down) {
++                    a3t_x[i] = frame.x[i]; a3t_y[i] = frame.y[i];
++                    sweet_hid_touch((int)i, 1, a3t_x[i], a3t_y[i]);
++                } else if (a3t_mask & (1u << i)) {
++                    sweet_hid_touch((int)i, 0, a3t_x[i], a3t_y[i]);
++                }
++            }
++            a3t_mask = frame.mask;
++            invalid = 0;
++        } else if (rc < 0) {
++            if (++invalid <= 8) printf("A3 TOUCH: rejected frame status=%#x count=%u\n", words[0], n);
++            if (invalid >= 100) break;
++        }
++        j7t_sleep_ms(4);
++    }
++done:
++    a3t_release();
++    thread_terminate_self();
++}
++
++static void a3y17lte_touch_start(void)
++{
++    int enabled = 0;
++    thread_t thread;
++    (void)PE_parse_boot_argn("a3touch", &enabled, sizeof(enabled));
++    printf("A3Y17LTE_PORT_V1_720X1280_IST3038H touch=%d\n", enabled);
++    if (enabled && kernel_thread_start_priority(a3t_thread, NULL, 28, &thread) == KERN_SUCCESS)
++        thread_deallocate(thread);
++}
++#endif
+diff --git a/bsd/dev/ist3038h_protocol.h b/bsd/dev/ist3038h_protocol.h
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/ist3038h_protocol.h
+@@ -0,0 +1,58 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/* IST3038H wire format, from Samsung imagis_30xxh sources. No firmware/NVM writes. */
++#ifndef A3_IST3038H_PROTOCOL_H
++#define A3_IST3038H_PROTOCOL_H
++#include <stdint.h>
++
++#define A3_IST_FINGERS 10
++#define A3_IST_CHIP_ID_REG 0xc0001000u
++#define A3_IST_INTR_REG 0xb00b0104u
++#define A3_IST_COORD_BURST_REG 0xb80b0108u
++#define A3_IST_CMD_REG 0xb00b011cu
++
++struct a3_ist_frame {
++    uint16_t mask;
++    uint16_t x[A3_IST_FINGERS], y[A3_IST_FINGERS];
++};
++
++static inline uint32_t a3_ist_be32(const uint8_t *p)
++{
++    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
++           ((uint32_t)p[2] << 8) | p[3];
++}
++
++/* 1 = complete frame, 0 = notification, -1 = corrupt/unsupported packet.
++ * Validate the complete packet before exposing any contact to HID. */
++static inline int a3_ist_decode(const uint32_t *words, unsigned count,
++                                struct a3_ist_frame *out)
++{
++    if (!count) return -1;
++    uint32_t status = words[0];
++    if (status == 0x8ead8eadu || status == 0x8ca0d00eu ||
++        status == 0xdbdb0000u || (status & 0xf0000fffu) == 0x80000cabu)
++        return 0;
++    if (!status || status == 0xffffffffu || !(status & 0x800u)) return -1;
++    unsigned n = (status >> 12) & 15u, pop = 0;
++    uint16_t mask = (uint16_t)(status & 0x3ffu);
++    for (unsigned i = 0; i < A3_IST_FINGERS; ++i) pop += (mask >> i) & 1u;
++    if (n > A3_IST_FINGERS || count != n + 1 || pop != n) return -1;
++    unsigned checksum = 0;
++    for (unsigned i = 0; i < count; ++i) {
++        uint32_t w = i ? words[i] : status & 0xffffffu;
++        for (unsigned b = 0; b < 4; ++b) checksum += (w >> (b * 8)) & 255u;
++    }
++    if ((checksum & 255u) != (status >> 24)) return -1;
++    struct a3_ist_frame f = {0};
++    f.mask = mask;
++    for (unsigned slot = 0, index = 1; slot < A3_IST_FINGERS; ++slot) {
++        if (!(mask & (1u << slot))) continue;
++        uint32_t w = words[index++];
++        unsigned x = (w >> 12) & 0xfffu, y = w & 0xfffu;
++        if (x >= 720 || y >= 1280) return -1;
++        f.x[slot] = (uint16_t)x;
++        f.y[slot] = (uint16_t)y;
++    }
++    *out = f;
++    return 1;
++}
++#endif

@@ -1,0 +1,352 @@
+name: a3-xnu
+
+on:
+  workflow_dispatch:
+    inputs:
+      macos_version:
+        description: macOS release whose xnu to build (13.5 = xnu-8796, iOS 16 era)
+        default: "13.5"
+      kernel_config:
+        description: RELEASE / DEVELOPMENT / DEBUG
+        default: DEVELOPMENT
+      machine_config:
+        description: Shared config for the A3-only overlay; MUST remain A5XELTE
+        default: A5XELTE
+      keep_going:
+        description: make -k (collect all compile errors in one run)
+        default: "true"
+      runner:
+        description: macOS runner used by the recent successful S7 builds
+        default: macos-15-intel
+  push:
+    branches: [experiment/a3y17lte-xnu-20261117]
+    paths:
+      - '.github/workflows/a3-xnu.yml'
+      - 'xnu/a3y17lte-patches/**'
+
+concurrency:
+  group: a3-xnu-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DXB_REPO: https://github.com/blacktop/darwin-xnu-build
+  DXB_SHA: 663906528d1cd5ea8fde7de6f16de73db9511549
+  MACOS_VERSION: ${{ inputs.macos_version || '13.5' }}
+  KERNEL_CONFIG: ${{ inputs.kernel_config || 'DEVELOPMENT' }}
+  MACHINE_CONFIG: ${{ inputs.machine_config || 'A5XELTE' }}
+
+jobs:
+  build:
+    # macos-15 has Xcode 16.x only (macos-14, with 15.x, is retired): see the Xcode step below
+    runs-on: ${{ inputs.runner || 'macos-15-intel' }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Pinned J7 Prime donor sources
+        uses: actions/checkout@v4
+        with:
+          repository: hoaan1911/ios-on7xelte
+          ref: f11e5d503398d814813899ffe531ad6521521b51
+          path: donor-patchset
+          persist-credentials: false
+
+      - name: Verify A3 profile
+        run: test "$MACHINE_CONFIG" = A5XELTE
+
+      - name: Fetch build script
+        run: |
+          set -e
+          git init -q dxb
+          git -C dxb fetch -q --depth 1 "$DXB_REPO" "$DXB_SHA"
+          git -C dxb checkout -q FETCH_HEAD
+
+          # Copy this repository's XNU patches into the pinned builder.
+          cp donor-patchset/xnu/patches/*.patch donor-patchset/xnu/patches/*.sh dxb/patches/
+          cp xnu/a3y17lte-patches/*.patch dxb/patches/
+
+          # libfirehose_kernel is built arm64e-only by default; these kernels
+          # use plain arm64. Cortex-A53 boards need flags without ARMv8.1 LSE.
+          python3 - dxb/build.sh "$MACHINE_CONFIG" <<'PY'
+          import sys
+          from pathlib import Path
+
+          path, config = Path(sys.argv[1]), sys.argv[2]
+          old = 'ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"'
+
+          if config in ("A5XELTE", "HEROLTE"):
+              new = (
+                  'ARCHS="arm64" VALID_ARCHS="arm64" '
+                  'OTHER_CFLAGS="-mkernel -nostdinc -Wno-packed '
+                  '-mcpu=cortex-a53 -march=armv8-a+crypto"'
+              )
+          else:
+              new = (
+                  'ARCHS="x86_64 arm64e arm64" '
+                  'VALID_ARCHS="x86_64 arm64e arm64"'
+              )
+
+          text = path.read_text()
+          assert text.count(old) == 1, (
+              "darwin-xnu-build firehose line changed; refusing to edit it"
+          )
+          path.write_text(text.replace(old, new))
+          print("firehose:", new)
+          PY
+
+          ls dxb/patches
+
+      - name: Deps
+        run: |
+          brew install jq gum bash cmake ninja
+
+          # build.sh checks for xcodes; Xcode is already installed on the runner.
+          printf '#!/bin/sh\nexit 0\n' | sudo tee /usr/local/bin/xcodes >/dev/null
+          sudo chmod +x /usr/local/bin/xcodes
+
+          sw_vers
+          ls -d /Applications/Xcode*.app
+
+          # GitHub's macOS 14 images (the last with Xcode 15.x) were retired on 2026-11-02, so there is no
+          # Xcode 15 on any hosted runner now. Prefer 15.x if one ever shows up; otherwise the OLDEST
+          # Xcode 16.x (never 26.x): it is the closest to the iig this xnu-8796 was written against.
+          # If its iig output does not compile (IORPC.kernelContent), the error annotations say so.
+          XC=$(ls -d /Applications/Xcode_15*.app 2>/dev/null | sort -V | tail -1 || true)
+          if [ -z "$XC" ]; then
+            XC=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | head -1 || true)
+            [ -n "$XC" ] && echo "::warning::no Xcode 15.x on this runner; using $XC"
+          fi
+          if [ -z "$XC" ]; then
+            echo "::error::no Xcode 15.x or 16.x on this runner"
+            exit 1
+          fi
+
+          echo "DEVELOPER_DIR=$XC/Contents/Developer" >> "$GITHUB_ENV"
+          sudo xcode-select -s "$XC"
+          xcodebuild -version
+          xcrun --find iig
+
+      - name: Build
+        working-directory: dxb
+        env:
+          # Keep going after errors so one run reports more compile failures.
+          MAKEFLAGS: ${{ inputs.keep_going == 'false' && '' || '-k' }}
+        run: |
+          set -o pipefail
+          bash build.sh 2>&1 | tee ../build.log
+
+      - name: Preserve build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a3-xnu-build-log
+          path: build.log
+          if-no-files-found: ignore
+
+      # The builder can skip rejected patches: this board layer is mandatory.
+      - name: Verify mandatory A3 source changes
+        run: |
+          python3 - <<'PYCHECK'
+          from pathlib import Path
+          log = Path('build.log').read_text(errors='replace')
+          assert not any('Skipping patch' in l and '0400-a3y17lte' in l for l in log.splitlines()), 'A3 layer skipped'
+          root = Path('dxb/xnu')
+          assert '#define A3Y17LTE 1' in (root/'pexpert/pexpert/arm64/A5XELTE.h').read_text()
+          assert 'a3y17lte_touch_start();' in (root/'bsd/dev/a5xelte_touch.c').read_text()
+          assert (root/'bsd/dev/a3_touch.inc').is_file()
+          assert 'Entry-stage kernel cannot write any eMMC sector' in (root/'bsd/dev/a5xelte_emmc.c').read_text()
+          print('A3 geometry, touch source and write protection present')
+          PYCHECK
+
+      # Publish build errors as check-run annotations for easier diagnosis.
+      - name: Report build errors as annotations
+        if: always()
+        run: |
+          test -f build.log || exit 0
+
+          kernel="dxb/fakeroot/System/Library/Kernels/kernel.$(echo "$KERNEL_CONFIG" | tr A-Z a-z).$(echo "$MACHINE_CONFIG" | tr A-Z a-z)"
+          if [ -f "$kernel" ]; then
+            echo "kernel built: $kernel"
+            exit 0
+          fi
+
+          python3 - build.log <<'PY'
+          import re
+          import sys
+
+          lines = open(sys.argv[1], errors="replace").read().splitlines()
+          clean = [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in lines]
+
+          pat = re.compile(
+              r"(error:|fatal error|Error \d|\*\*\* |FAILED|Skipping patch|"
+              r"No such file|panic|❌)",
+              re.I,
+          )
+          cc = re.compile(
+              r"(:\d+:\d+: (fatal )?error:|^ld: |Undefined symbols|clang: error)"
+          )
+
+          hits = [line for line in clean if cc.search(line)]
+          hits += [
+              line for line in clean
+              if pat.search(line)
+              and line not in hits
+              and "Skipping patch" not in line
+              and "already exists in working directory" not in line
+              and "patch does not apply" not in line
+          ]
+
+          esc = lambda s: s.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+
+          for line in hits[:9]:
+              print("::error title=build::" + esc(line[:900]))
+
+          tail = "\n".join(line[:300] for line in clean[-60:])
+          print("::error title=build log tail::" + esc(tail[-30000:]))
+          PY
+          exit 1
+
+      - name: Peek at the patched sources (small artifact for writing the next patches)
+        if: always()
+        run: |
+          mkdir -p peek
+          for f in bsd/kern/kern_exec.c bsd/kern/sweet_amfi.c iokit/Kernel/arm/A5XELTEGPU.cpp iokit/Kernel/arm/SweetFramebuffer.cpp iokit/Kernel/arm/SweetSurface.cpp bsd/dev/a5xelte_battery.c osfmk/console/serial_console.c; do
+            [ -f "dxb/xnu/$f" ] && cp "dxb/xnu/$f" "peek/$(basename "$f")" || echo "missing: $f"
+          done
+          grep -n "Skipping patch" build.log | cut -c1-260 > peek/skipped-patches.txt || true
+          ls -l peek
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: xnu-peek
+          path: peek/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Package build tree for local compiles
+        if: always()
+        continue-on-error: true   # a packaging problem must not turn a good kernel build red
+        run: |
+          if [ ! -d dxb ]; then
+            echo "Build directory dxb does not exist; skipping build-tree package."
+            exit 0
+          fi
+
+          SDK=$(xcrun --sdk macosx --show-sdk-path)
+          mkdir -p sdk-kernel-platform
+          cp -R "$SDK/System/Library/Frameworks/Kernel.framework/Versions/A/PrivateHeaders/platform" sdk-kernel-platform/ || true
+
+          tar czf buildtree.tgz \
+            --exclude='*.o' \
+            --exclude='*.cpo' \
+            --exclude='*.a' \
+            --exclude='*.dSYM' \
+            --exclude='*.unstripped' \
+            --exclude='kernel.development.*' \
+            --exclude='.git' \
+            -C dxb build/xnu.obj fakeroot/usr/local/include xnu \
+            -C .. sdk-kernel-platform
+
+          ls -la buildtree.tgz
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: xnu-buildtree
+          path: buildtree.tgz
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Inspect closed KDK support libs
+        if: always()
+        run: |
+          mkdir -p out/kdk-libs
+
+          for lib in /Library/Developer/KDKs/*/System/Library/KernelSupport/lib*.a; do
+            [ -f "$lib" ] || continue
+            b=$(basename "$lib" .a)
+            ar t "$lib" > "out/kdk-libs/$b.members.txt" 2>&1 || true
+            nm -m "$lib" > "out/kdk-libs/$b.nm.txt" 2>&1 || true
+            lipo -info "$lib" >> out/kdk-libs/arch.txt 2>&1 || true
+          done
+
+          ls -la out/kdk-libs
+
+      - name: Collect
+        if: always()
+        run: |
+          mkdir -p out
+
+          if [ -d dxb/fakeroot/System/Library/Kernels ]; then
+            cp -R dxb/fakeroot/System/Library/Kernels/. out/ 2>/dev/null || true
+          fi
+
+          ls -la out
+          (cd out && shasum -a 256 kernel.* > SHA256SUMS) || true
+
+      - name: Check Cortex-A53 compatibility (no ARMv8.1 LSE atomics)
+        if: env.MACHINE_CONFIG == 'A5XELTE' || env.MACHINE_CONFIG == 'HEROLTE'
+        run: |
+          kernel="out/kernel.$(echo "$KERNEL_CONFIG" | tr A-Z a-z).$(echo "$MACHINE_CONFIG" | tr A-Z a-z)"
+          test -f "$kernel"
+
+          xcrun llvm-objdump -d --no-show-raw-insn "$kernel" > lse-scan.txt || {
+            echo "::error title=LSE check::llvm-objdump failed on $kernel"
+            exit 1
+          }
+
+          # Ignore K256, a constant table that can disassemble as LSE instructions.
+          python3 - lse-scan.txt "$kernel" <<'PY'
+          import re
+          import sys
+
+          lse = re.compile(
+              r"\s(cas|casp|ldadd|ldclr|ldeor|ldset|ldsmax|ldsmin|"
+              r"ldumax|ldumin|stadd|stclr|steor|stset|stsmax|stsmin|"
+              r"stumax|stumin|swp)[a-z]*\s"
+          )
+
+          data_symbols = {"K256"}
+          func, funcs, samples = "?", {}, []
+
+          for line in open(sys.argv[1], errors="replace"):
+              match = re.match(r"^[0-9a-f]+ <(.+)>:", line)
+              if match:
+                  func = match.group(1)
+              elif lse.search(line) and func not in data_symbols:
+                  funcs[func] = funcs.get(func, 0) + 1
+                  if len(samples) < 8:
+                      samples.append(func + ": " + line.strip())
+
+          count = sum(funcs.values())
+          print(f"LSE instructions in code of {sys.argv[2]}: {count}")
+
+          if count:
+              top = sorted(funcs.items(), key=lambda item: -item[1])[:40]
+              msg = f"{count} LSE instructions in {len(funcs)} functions\n"
+              msg += "\n".join(f"{n} {f}" for f, n in top)
+              msg += "\n--\n" + "\n".join(samples)
+              print(
+                  "::error title=LSE in kernel::"
+                  + msg.replace("%", "%25").replace("\n", "%0A")
+              )
+              sys.exit(1)
+          PY
+
+      - name: Verify A3 kernel marker
+        run: |
+          python3 - <<'PYMARKER'
+          import os
+          from pathlib import Path
+          p = Path('out') / ('kernel.' + os.environ['KERNEL_CONFIG'].lower() + '.a5xelte')
+          assert b'A3Y17LTE_PORT_V1_720X1280_IST3038H' in p.read_bytes(), 'A3 marker missing'
+          print('A3 entry kernel marker present; physical boot still untested')
+          PYMARKER
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: a3-xnu-kernel
+          path: out/kernel.*.a5xelte
+          if-no-files-found: error
