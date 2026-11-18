@@ -217,3 +217,68 @@ private root project, run 44339908078. It uses Apple's iPhone 8 Plus iOS 16.7.16
 20H392 source, d21ap product metadata, full apps and stock assets. It has no
 A3 phone installation step. iOS root boot and all five requested hardware
 features remain pending physical and driver integration.
+
+The first full-assets 10 GiB root attempt, run 44339908078, failed with
+No space left on device while copying shared-cache part .37. The adjusted
+11 GiB run is 44344309173, source f79b8d035feea9b53cfc873fb4a1acdab355d12d.
+It measures uncompressed allocation before copying and omits the six asset
+families recorded in docs/a3y17lte-hardware.md and cache local-symbol files.
+The Audio tree is included. Build success remains pending.
+
+Patch 0402 prepares the separately selected USERDATA iOS root. Sector writes
+require emmc_ready, emmc_writable, USERDATA and an LBA inside its selected GPT
+extent before any host-register access. The BOOT-only diagnostic profile
+still uses md0 with emmcwrite=0. No handset USERDATA installation is performed.
+The active full-kernel build is 44344673671 at source
+1f6addf7d0169e9ba0be0e834d951cbb8259a2d9. Two earlier queued builds were
+superseded while reviewing the nonsecure PMU read and the root-write path.
+
+Local protocol and source compilation checks passed. All five A3 Python
+tool tests passed, including old-kernel rejection for the hardware and
+USERDATA profiles. Eighteen Windows collector tests passed, including the
+new firmware cases for good data, transient corruption, persistent corruption
+and independent reads when remote SHA-256 is unavailable. Their peripheral
+and USB devices are simulations. Handset behavior remains unverified.
+
+Full kernel run 44344673671 completed successfully, including source, no-LSE
+and binary marker checks. Artifact 14445479907 has ZIP SHA-256
+689ceace7c751152d7cdcc8474f486b5310591523011013d41e7a5f17a9b95ef.
+The kernel is 17672472 bytes, SHA-256
+f24d72e7e3f85fc14da7c66378af600822afade68ece573cb77fb3ba3b501b22.
+
+Prepared v0.7 with the same 8 MiB HFS+ diagnostic root and Apple's matching
+d21ap product metadata. BOOT size is 27256848 bytes; SHA-256
+a521de6192b4df7a75ab09d9c01b955eec059e0a6fa52b55a0274094dc3d8fa4.
+All ten XNU segments, the HFS contents, boot arguments, original ramdisk,
+DTBH and header addresses were verified. Two Cortex-A53 loader runs reached
+the early kernel marker, covering EL1 and EL2-to-EL1 handoff.
+
+The actual kernel instructions passed eight hardware fixtures, five GPT
+fixtures and nine sector-write fixtures. A prepared UART received the
+synthetic HCI version and reported the expected six fields. Disabled clocks,
+power, mux and DMA-mode fixtures transmitted nothing. Missing reply consumed
+the one-second wait budget. Valid first and last USERDATA sectors wrote one
+synthetic sector each. Unregistered/read-only roots, wrong partition, empty
+extent, out-of-bounds sectors and the donor log range returned EROFS before
+MMIO. These are emulated controller results. Physical radio, camera, audio,
+storage writes and modem functions are still pending.
+
+Root run 44344309173 completed successfully. Its case-sensitive journaled
+HFS+ volume A3IOSROOT passed fsck_hfs. Raw size is 11811160064 bytes (11 GiB),
+with 4672229869 compressed bytes split into three private release assets.
+The pre-copy estimate was 9043593216 bytes. The matching d21ap ADT is
+185432 bytes with SHA-256
+8c5fa57d3cfbc702936b49198971a22ab317bcb81e105d931d74f94c71dc7909.
+The root report, space plan, ADT and checksum manifest were checked against
+the release asset digests. The root remains untested on the A3 handset.
+
+A separate 18868240-byte USERDATA boot candidate was assembled and its
+loader reached the early XNU marker in Cortex-A53 emulation. It is outside
+the hardware-test download. The handset still needs the v0.7 hardware/GPT
+observation before planning a USERDATA installation.
+
+The public vendor reference also provides the firmware. Eleven files
+(5198423 bytes) matched the Git blob IDs in tree
+3f7ccfe439bc5f3f5971c9c53bb9ed96801fa9fc. QCA NVM type 2 has a 1997-byte
+payload and the type-1 rampatch has a 68896-byte payload. Reference blobs
+stay outside git. The Windows collector can compare the installed versions.

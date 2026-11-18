@@ -1,0 +1,73 @@
+# Galaxy A3 (2017) hardware integration
+
+The hardware-tested baseline is v0.5 on the owner's SM-A320FL. XNU displays
+the console, mounts A3TestRoot as md0 and runs the diagnostic process as PID 1.
+The v0.6 internal GPT test still needs a handset observation.
+
+The requested camera, sound, WLAN, Bluetooth and modem each require the
+transport, firmware and an Apple-facing interface. The following mapping
+comes from the A3 EUR revision 03 DTS in the pinned Samsung kernel.
+
+| Area | A3 hardware and transport | Work still required |
+| --- | --- | --- |
+| Bluetooth | QCA6174 compatible, UART0 at 0x13810000, GPB0 mux, GPD4-0 enable, GPA1-2 wake, GPF3-0 shared supply | Power and baud initialization, Qualcomm patch/NVM download, full HCI transport and bluetoothd integration |
+| WLAN | qcom,cnss_sdio, GPD3-6 enable, GPA2-2 host wake | SDIO enumeration and transfer, firmware load, packet queues, association and Apple80211 integration |
+| Audio | COD3026X, TFA9896 amplifier and Exynos I2S | Codec access with the DTS ten-bit-address requirement, clocks, PCM/DMA, amplifier profile and AudioServerPlugIn backend |
+| Camera | Rear IMX258 and front IMX219, FIMC-IS, shared supply pins | Sensor power/reset and I2C, clock, CSI/DMA buffers, image processing and mediaserverd capture integration |
+| Modem | SS315AP board description, reserved modem memory | CP firmware and lifecycle, shared-memory protocol, data network and CommCenter integration |
+
+## Current development build
+
+Patch 0401 adds a3hwprobe=1 for a concise readout of the board's GPIO,
+clock and power state. a3btprobe=1 additionally sends the standard HCI Read
+Local Version command when the existing UART, power and pin state allow it.
+The wait budget is one second in total. Responses are decoded with their
+actual status and version fields. A powered-off controller needs a subsequent
+initialization stage. The test does not provide discovery, pairing or audio.
+
+The HCI transaction checks the MIF source and bus gates, PERI PCLK bit 11,
+the UART functional clock, GPB0 mux 0x2222, supply/enable/wake pins and an
+8N1 polling-compatible UART mode before touching the UART data registers.
+Controller blocks behind disabled gates are skipped.
+
+START-HARDWARE.cmd in the Windows diagnostic package reads a fixed list of
+firmware from mounted /vendor or /system/vendor. Transfers are checked against
+the device's SHA-256 or two matching reads. The resulting archive records
+missing or unverified files and the source path of each accepted file.
+The firmware list covers QCA rampatch/NVM, selected WLAN firmware, Tfa9896.cnt,
+audio routing and the two camera setfiles plus FIMC-IS firmware.
+
+## Apple system volume
+
+The A3 root workflow builds a separate 11 GiB HFSX candidate in the owner's
+existing private root project. It extracts the iPhone 8 Plus iOS 16.7.16
+20H392 erase identity d21ap, retains the apps and preserves ownership.
+The 10 GiB full-assets attempt exhausted the volume. The adjusted build
+omits LinguisticData, PreinstalledAssetsV2, Health, NanoTimeKit, Assistant and
+OnBoardingBundles, plus the local-symbol companion files of the shared cache.
+It keeps the Audio tree. A pre-copy scan estimates uncompressed allocation
+and reserves 512 MiB before starting the copy.
+It verifies the filesystem and saves the compressed image and matching ADT.
+--product-adt accepts that ADT when preparing an A3 payload.
+
+This image still requires storage-driver integration and a physical boot
+test. Its installation needs a separate USERDATA decision. The BOOT test
+package continues to carry the small diagnostic HFS root.
+
+Patch 0402 prepares the separate --ios-root profile with rd=emmcroot0 and
+emmcwrite=1. Its sector-write entry point checks the registered root, the
+USERDATA name, the write flag and both GPT extent boundaries before MMIO.
+The diagnostic profiles use emmcwrite=0. Installing the Apple root into
+USERDATA still requires a separate device operation and data-loss decision.
+
+## Sources
+
+- [Samsung kernel f55a360868d7ae306de49590aade312037d1c67f](https://github.com/samsungexynos7870/android_kernel_samsung_exynos7870/tree/f55a360868d7ae306de49590aade312037d1c67f), A3 EUR03 DTS, pinctrl-exynos.c and pwrcal/S5E7870.
+- [A3 Android device configuration](https://github.com/samsungexynos7870/android_device_samsung_a3y17lte/tree/a2b47c740a2a42aa99d42a71d60d403d55038bb2), proprietary-files.txt, Bluetooth configuration and audio routing.
+- [A3 vendor reference](https://github.com/samsungexynos7870/android_vendor_samsung_a3y17lte/tree/common), tree 3f7ccfe439bc5f3f5971c9c53bb9ed96801fa9fc. Eleven firmware files were downloaded outside git and verified against their Git blob IDs. The QCA type-1 rampatch and type-2 NVM lengths match their TLV headers. Their versions still need comparison with the handset.
+- [Note FE reference 76abd2e6](https://github.com/egemengunel/ios-a5xelte/tree/76abd2e6d97e9b60464255d1c6cf1d2e57a9325d), patches 0432–0436 and the HakiOS audio/camera interface.
+- [S7 reference 2aafd7a0](https://github.com/wardevsa/ios-a5xelte/tree/2aafd7a0a1422a538399c449e160219b8aeba65e), Apple80211, audio and capture work.
+
+The S7/Note FE WLAN backend uses BCM4359 over PCIe. Its Bluetooth backend
+uses a Broadcom firmware protocol. The A3 transport and Qualcomm firmware
+formats need their own implementation.

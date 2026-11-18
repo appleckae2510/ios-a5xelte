@@ -1,0 +1,51 @@
+GALAXY A3 (2017) - WINDOWS-DIAGNOSE v1.1 (BOOT-SICHERUNG KORRIGIERT)
+
+Dieses Paket erstellt die A3-Diagnose.zip fuer den iOS-Port.
+Es wird nichts geflasht. Der BOOT-Inhalt wird nur vom Handy auf den PC kopiert.
+Das Paket braucht Windows 10/11 (64 Bit) mit Windows PowerShell 5.1 oder neuer.
+Python und Administratorrechte sind nicht erforderlich.
+
+1. Diese ZIP vollstaendig in einen neuen Ordner entpacken.
+   Nicht direkt aus der ZIP oder aus dem alten Diagnoseordner starten.
+2. Falls ADB noch fehlt: ADB-HERUNTERLADEN.cmd oeffnen, Googles Platform-Tools
+   fuer Windows herunterladen und entpacken. Den kompletten Ordner
+   platform-tools in den Diagnoseordner legen, neben START-DIAGNOSE.cmd.
+   Vorhandenes ADB aus dem PATH oder Android SDK wird ebenfalls gefunden.
+3. Nur das Galaxy A3 (2017) per USB-Datenkabel anschliessen und TWRP starten.
+   TWRP muss bereits installiert sein. ADB-Sideload darf nicht aktiv sein.
+4. START-DIAGNOSE.cmd doppelklicken und bis FERTIG warten.
+5. Im Ordner Ergebnisse den neuesten A3-Unterordner oeffnen.
+   Die Datei A3-Diagnose.zip hier im Chat schicken.
+
+Die Diagnose speichert BOOT, Geraetemodell, vorhandenen Device-Tree,
+Speicher-/Partitionsdaten, Displayangaben und das Kernelprotokoll.
+BOOT wird in 1-MiB-Abschnitten gelesen. Ein fehlgeschlagener Abschnitt wird
+bis zu dreimal versucht. Bereits gelesene Abschnitte bleiben dabei erhalten.
+Die Statusmeldungen des Leseprogramms gelangen nicht mehr in die Bilddatei.
+Nach der Sicherung wird SHA-256 mit dem Original auf dem Handy verglichen.
+Fehlt SHA-256 in TWRP, werden zwei vollstaendige Lesungen miteinander verglichen.
+Bei abweichenden Pruefsummen wird die gesamte Sicherung einmal neu gelesen.
+Nur vollstaendige, erfolgreich verglichene Sicherungen bekommen eine Diagnose-ZIP.
+Nicht vorhandene Zusatzdateien werden vermerkt; sie stoppen die Sicherung nicht.
+Jeder Lauf bekommt einen eigenen Ordner. Alte Sicherungen werden nicht ersetzt.
+Die Daten enthalten keine absichtlich ausgelesenen Konten, Fotos oder Nachrichten.
+BOOT und Protokolle koennen Geraetekenndaten enthalten: bitte privat aufbewahren.
+
+WENN ES NICHT GEHT:
+- Kein Geraet: TWRP, USB-Datenkabel, USB-Port und Samsung-USB-Treiber pruefen.
+- unauthorized/offline: TWRP manuell starten und USB erneut verbinden.
+- Mehrere Geraete: andere Android-Geraete und Emulatoren trennen.
+- Keine Rechte: die Diagnose muss in TWRP laufen, nicht im normalen Android.
+- Sicherung abgebrochen: FEHLER.txt und SICHERUNG-PROTOKOLL.txt aus dem
+  aktuellen Ergebnisordner im Chat schicken. Die Meldung nennt jetzt unter
+  anderem erwartete/empfangene Bytes oder den echten ADB-Exitcode.
+  Ein Groessenfehler allein wird nicht mehr als USB-Kabelfehler ausgegeben.
+  Dauerhafte ADB-, Treiber-, Speicher- oder Geraetefehler koennen die Sicherung
+  weiterhin verhindern. Eine unvollstaendige Sicherung wird nicht als fertig markiert.
+
+Google Platform-Tools:
+https://developer.android.com/tools/releases/platform-tools
+
+Dieses Windows-Paket ist kein flashbares Diagnose-Image und installiert kein iOS.
+Mit der erzeugten Diagnose werden danach die echten A3-Bootdaten geprueft,
+bevor ein geraetespezifisches Test-Boot-Image gebaut wird.
