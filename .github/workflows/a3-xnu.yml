@@ -32,7 +32,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DXB_REPO: https://github.com/blacktop/darwin-xnu-build
   DXB_SHA: 663906528d1cd5ea8fde7de6f16de73db9511549
   MACOS_VERSION: ${{ inputs.macos_version || '13.5' }}
   KERNEL_CONFIG: ${{ inputs.kernel_config || 'DEVELOPMENT' }}
@@ -67,9 +66,12 @@ jobs:
       - name: Fetch build script
         run: |
           set -e
-          git init -q dxb
-          git -C dxb fetch -q --depth 1 "$DXB_REPO" "$DXB_SHA"
-          git -C dxb checkout -q FETCH_HEAD
+          # Only the files at this commit are needed; avoid fetching Git history.
+          mkdir dxb
+          curl --fail --location --retry 4 --retry-all-errors --connect-timeout 15 \
+            --max-time 150 "https://codeload.github.com/blacktop/darwin-xnu-build/tar.gz/$DXB_SHA" \
+            --output "$RUNNER_TEMP/a3-builder.tgz"
+          tar -xzf "$RUNNER_TEMP/a3-builder.tgz" --strip-components=1 -C dxb
 
           # Copy this repository's XNU patches into the pinned builder.
           cp donor-patchset/xnu/patches/*.patch donor-patchset/xnu/patches/*.sh dxb/patches/
