@@ -70,6 +70,8 @@ def main():
     p.add_argument('--product-adt', type=Path, help='matching Apple product metadata from the root build')
     p.add_argument('--ios-root', action='store_true',
                    help='boot a separately installed HFSX iOS root from USERDATA with writes inside that partition')
+    p.add_argument('--combined', action='store_true',
+                   help='check the board and select the prepared read-only iOS root or the included diagnostic HFS')
     p.add_argument('--probe-emmc', action='store_true',
                    help='read the internal GPT and report USERDATA while booting from md0')
     p.add_argument('--probe-hardware', action='store_true',
@@ -80,6 +82,8 @@ def main():
     a = p.parse_args()
     if a.ios_root and a.ramdisk:
         p.error('--ios-root and --ramdisk select different root devices')
+    if a.combined and (a.ios_root or not a.ramdisk or not a.product_adt):
+        p.error('--combined requires --ramdisk and --product-adt and selects the root automatically')
     if not a.allow_unverified_handoff:
         p.error('Review the handoff for this image and pass --allow-unverified-handoff to build it.')
     with zipfile.ZipFile(a.evidence) as z:
@@ -97,8 +101,10 @@ def main():
     unpack_boot(original)
     kernel = a.kernel.read_bytes()
     if board.MARKER not in kernel: raise ValueError('Kernel lacks A3 marker; J7/S7 kernels are refused')
-    if a.probe_hardware and b'A3Y17LTE_HARDWARE_V2' not in kernel:
+    if (a.probe_hardware or a.combined) and b'A3Y17LTE_HARDWARE_V2' not in kernel:
         raise ValueError('Hardware probe needs the A3 kernel with patch 0403 (CP registers skipped)')
+    if a.combined and b'A3 COMBINED: RAM root' not in kernel:
+        raise ValueError('Combined boot needs the A3 kernel with patch 0404')
     if a.ios_root and b'A3Y17LTE_USERDATA_RW_V1' not in kernel:
         raise ValueError('USERDATA root needs the A3 kernel with patch 0402')
     m = mkpayload.parse_macho(kernel)
@@ -114,7 +120,11 @@ def main():
     if a.ios_root:
         root_device = 'emmcroot0'
         storage_args = 'emmcprobe=0 emmcroot=USERDATA emmcwrite=1'
-    hardware_args = ' a3hwprobe=1 a3btprobe=1' if a.probe_hardware else ''
+    if a.combined:
+        # Resolve rd in IOFindBSDRoot, then report the actual BSD root to VFS.
+        root_device = 'a3auto'
+        storage_args = 'emmcprobe=0 emmcroot=USERDATA emmcwrite=0 a3combined=1 ignition_level=1'
+    hardware_args = ' a3hwprobe=1 a3btprobe=1' if a.probe_hardware or a.combined else ''
     cmdline = (f'debug=0xc serial=3 cpus=1 keepsyms=1 -noprogress rd={root_device} '
                'j7hw=1 j7keys_layout=1 a3touch=0 j7fg=0 j7gpu=0 a5gpu=0 '
                f'{storage_args} a5log=0 sweetfb_scale=1 sweetfb_lw=750 sweetfb_lh=1334'
@@ -140,9 +150,12 @@ def main():
     if a.ios_root:
         stage = 'USERDATA IOS ROOT CANDIDATE'
         root_source = 'pre-installed HFSX iOS root in USERDATA'
+    if a.combined:
+        stage = 'COMBINED READ-ONLY BOOT'
+        root_source = 'verified A3IOSROOT catalog in USERDATA or diagnostic HFS on md0'
     report = {'target': 'a3y17lte', 'stage': stage, 'phone_boot_tested': False,
-              'emmc_probe_requested': a.probe_emmc,
-              'hardware_probe_requested': a.probe_hardware,
+              'emmc_probe_requested': a.probe_emmc or a.combined,
+              'hardware_probe_requested': a.probe_hardware or a.combined,
               'root': root_source,
               'size': len(result), 'sha256': hashlib.sha256(result).hexdigest(),
               'dtbh_source': 'unaltered device BOOT backup', 'flashed': False,

@@ -331,3 +331,50 @@ partition with both released images. The remaining bytes in the 32 MiB
 partition are outside both images. The helper stages the verified fix at
 a versioned path in recovery RAM if needed. The operator chooses Boot in
 TWRP, then the helper rereads the partition before reboot.
+
+## A320FL combined boot and hardware evidence
+
+The owner confirmed the corrected v0.7.1 image on the SM-A320FL. The photo
+shows HARDWARE_V2, the skipped CP registers, a readable GPT USERDATA entry,
+the A3TestRoot HFS mount and repeated PID 1 heartbeat messages. UART clocks
+are present, with BT mux, enable and shared supply at zero. WLAN enable and
+camera supply/reset pins read zero. Chip names in the log identify
+the board configuration. Camera capture, sound, Wi-Fi, pairing, cellular and
+touch input still need functional testing on this handset.
+
+The combined v0.8 profile runs the board handoff checks and uses the eMMC
+controller in read-only mode. Before choosing the native root it checks both
+11 GiB HFSX headers, the binary catalog, the volume name and the entries for
+launchd, dyld, the shared cache and SpringBoard. It then continues through
+the ordinary emmcroot0 mount and BSD init path. The md0 in the same BOOT
+serves as the fallback. Its first process checks HFS, console and pipe I/O
+and execs a second RAM program as PID 1. A 20H392 root that is already on
+USERDATA is required for the Apple path. The profile never installs it.
+
+Private root validation run 44413192297 verified all three compressed parts
+of the previously released root and selected the actual volume with 675
+sector reads. This checks the catalog selector on the real filesystem bytes.
+The new version has not been run on the handset.
+
+The final kernel source is 5e88373e1475bf853cf1e6199722cacb3215ede4
+(run 44415023180, artifact 14480890403). The kernel is 17672608 bytes,
+SHA-256 e18ba2bf813fa6d3e8c3d5a204c96f5fecbab567dc176edceefc230bd057e518.
+The released BOOT is 27256848 bytes, SHA-256
+4e374e367c60b15919694b6c521c8865be2ba7dc96e7f891f04b8477be0c97a5.
+It uses rd=a3auto. The BSD RAM-root predicate follows the resolved device.
+
+An A53 replay executed the board probe, actual sector I/O and IOFindBSDRoot
+from the packaged image. With the original release catalog it issued 33 GPT
+reads and 675 HFSX reads and printed the native emmcroot0 BSD root. For an
+Android-like header and the observed A3 handoff it issued 34 reads and
+selected md0. Other scenarios exercised HCI readiness, both invalid GPT
+CRCs, missing USERDATA, a gated clock, a bad alternate volume header and a
+mount retry. All nine issued zero media writes. The RAM Mach-O replay
+continued through execve into its second PID 1 program. EL1 and EL2 loader
+replays both reached the first linked XNU marker. These use modeled devices
+and syscall services. Apple's launchd was not executed in the emulator.
+
+The Windows package entry START-GESAMTTEST.cmd uses the packer's JSON,
+verifies the local image and TWRP staging, and checks the BOOT prefix
+after the operator flashes Boot. Thirteen modeled TWRP transfer/check cases
+ran against the released bytes.

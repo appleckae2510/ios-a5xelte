@@ -4,7 +4,8 @@ param(
     [string]$AdbPath,
     [string]$OutputDirectory,
     [switch]$Hardware,
-    [switch]$BootCheck
+    [switch]$BootCheck,
+    [switch]$Combined
 )
 
 Set-StrictMode -Version 2.0
@@ -318,8 +319,9 @@ function Save-VerifiedBoot([string]$BootPath, [long]$BootSize) {
 
 function Main {
     Write-Host ''
-    if ($BootCheck) {
-        Write-Host 'GALAXY A3 SM-A320FL - BOOT-Vergleich mit Panicfix v0.7.1'
+    if ($BootCheck -or $Combined) {
+        if ($Combined) { Write-Host 'GALAXY A3 SM-A320FL - XNU-Gesamttest v0.8' }
+        else { Write-Host 'GALAXY A3 SM-A320FL - BOOT-Vergleich mit Panicfix v0.7.1' }
         Write-Host 'TWRP bleibt offen. Das PC-Programm liest BOOT und legt bei Bedarf ein Image in /tmp bereit.'
     } else {
         Write-Host 'GALAXY A3 (2017) - DIAGNOSE FUER WINDOWS v1.1'
@@ -354,9 +356,9 @@ function Main {
     if (-not $matchesA3) { throw 'Dieses Geraet wird nicht eindeutig als a3y17lte erkannt. Abbruch.' }
     if (-not $properties['ro.twrp.version']) { throw 'TWRP nicht erkannt. Bitte TWRP manuell starten.' }
 
-    if ($BootCheck) {
+    if ($BootCheck -or $Combined) {
         . (Join-Path $PSScriptRoot 'A3-Bootvergleich.ps1')
-        Invoke-A3BootCheck $properties
+        Invoke-A3BootCheck $properties -Combined:$Combined
         return
     }
 

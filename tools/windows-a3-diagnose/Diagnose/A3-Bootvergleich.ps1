@@ -52,13 +52,13 @@ function Send-A3CheckedImage([string]$ImagePath, [string]$RemotePath, [string]$E
     }
 }
 
-function Get-A3BootLabel([string]$Hash, [string]$FixedHash) {
-    if ($Hash -eq $FixedHash) { return 'v0.7.1' }
+function Get-A3BootLabel([string]$Hash, [string]$FixedHash, [string]$Version = 'v0.7.1') {
+    if ($Hash -eq $FixedHash) { return $Version }
     if ($Hash -eq 'a521de6192b4df7a75ab09d9c01b955eec059e0a6fa52b55a0274094dc3d8fa4') { return 'v0.7' }
     return 'anderes Image'
 }
 
-function Invoke-A3BootCheck($Properties) {
+function Invoke-A3BootCheck($Properties, [switch]$Combined) {
     if ($Properties['ro.bootloader'] -notmatch '^A320FL' -and $Properties['ro.product.model'] -ne 'SM-A320FL') {
         throw 'Dieses Paket ist fuer das SM-A320FL. Die Modellkennung in TWRP passt nicht.'
     }
@@ -73,14 +73,29 @@ function Invoke-A3BootCheck($Properties) {
 
     $expected = 'f7a14c90c37bd1f97227110de19703bb3ef76782fc107f5ab6c29b3c3d729884'
     $name = 'A3-A320FL-XNU-Panicfix-v0.7.1.img'
+    $length = 27256848
+    $version = 'v0.7.1'
+    $remote = '/tmp/A3-Panicfix-0.7.1-f7a14c90.img'
+    if ($Combined) {
+        $name = 'A3-A320FL-Gesamttest-v0.8.img'
+        $version = 'v0.8'
+        $profilePath = Join-Path (Split-Path -Parent $PSScriptRoot) ([IO.Path]::ChangeExtension($name, '.json'))
+        $profile = Get-Content -Raw -LiteralPath $profilePath | ConvertFrom-Json
+        $expected = [string]$profile.sha256
+        $length = [long]$profile.size
+        if ($profile.target -ne 'a3y17lte' -or $profile.stage -ne 'COMBINED READ-ONLY BOOT' -or
+            $expected -cnotmatch '^[0-9a-f]{64}$' -or $length -le 0 -or $length -gt 33554432) {
+            throw 'Die Paketdaten zum Gesamttest sind ungueltig. Bitte das gesamte ZIP erneut entpacken.'
+        }
+        $remote = '/tmp/A3-Gesamttest-0.8-' + $expected.Substring(0, 8) + '.img'
+    }
     $image = Get-Item -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) $name)
-    if ($image.Length -ne 27256848 -or (Get-FileHash -LiteralPath $image.FullName -Algorithm SHA256).Hash -ne $expected) {
+    if ($image.Length -ne $length -or (Get-FileHash -LiteralPath $image.FullName -Algorithm SHA256).Hash -ne $expected) {
         throw 'Die Image-Datei auf dem PC ist unvollstaendig oder falsch. Entpacke das BOOT-Check-ZIP erneut.'
     }
     $before = Get-InstalledA3BootHash $image.Length
-    Write-Host ('VORHER: ' + (Get-A3BootLabel $before $expected) + '  SHA-256 ' + $before)
+    Write-Host ('VORHER: ' + (Get-A3BootLabel $before $expected $version) + '  SHA-256 ' + $before)
     if ($before -ne $expected) {
-        $remote = '/tmp/A3-Panicfix-0.7.1-f7a14c90.img'
         Send-A3CheckedImage $image.FullName $remote $expected
         Write-Host ('Bereit in TWRP: ' + $remote)
         Write-Host 'In TWRP: Installieren > Image installieren > obige Datei > ausschliesslich Boot.'
@@ -88,9 +103,9 @@ function Invoke-A3BootCheck($Properties) {
         $reply = Read-Host 'Dann hier am PC Enter druecken. Mit Q beenden'
         if ($reply -eq 'Q') { Write-Host 'Beendet. Nachpruefung vor dem Neustart durch erneuten Start moeglich.'; return }
         $after = Get-InstalledA3BootHash $image.Length
-        Write-Host ('NACHHER: ' + (Get-A3BootLabel $after $expected) + '  SHA-256 ' + $after)
+        Write-Host ('NACHHER: ' + (Get-A3BootLabel $after $expected $version) + '  SHA-256 ' + $after)
         if ($after -ne $expected) { throw 'Auf BOOT steht weiterhin ein anderes Image. Bleibe in TWRP und schicke die Zeilen VORHER und NACHHER.' }
     }
-    Write-Host 'BOOT BESTAETIGT: v0.7.1' -ForegroundColor Green
+    Write-Host ('BOOT BESTAETIGT: ' + $version) -ForegroundColor Green
     Write-Host 'Jetzt in TWRP Neustart > System waehlen. Du kannst den Start ab TWRP filmen.'
 }

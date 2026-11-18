@@ -164,6 +164,25 @@ class A3Tools(unittest.TestCase):
             self.assertNotIn('rd=md0', ios_args)
             self.assertEqual(struct.unpack_from('<I', ios_payload, 12)[0], 1)
 
+            import mkadt
+            product = d / 'product.adt'
+            product.write_bytes(adt.serialize(mkadt.node('device-tree', children=[mkadt.node('product')])))
+            combined = argv + ['--combined', '--product-adt', str(product), '--ramdisk', str(test_root)]
+            with patch.object(sys, 'argv', combined):
+                with self.assertRaisesRegex(ValueError, 'patch 0404'):
+                    pack.main()
+                k.extend(b'A3 COMBINED: RAM root\0')
+                struct.pack_into('<Q', k, 32 + 48, len(k))
+                (d / 'kernel').write_bytes(k)
+                pack.main()
+            payload = pack.unpack_boot((d / 'entry.img').read_bytes())[1][0x4010:]
+            combined_args = payload[0x48:0x2a8].split(b'\0', 1)[0].decode().split()
+            for arg in ('rd=a3auto', 'emmcprobe=0', 'emmcroot=USERDATA', 'emmcwrite=0',
+                        'a3combined=1', 'a3hwprobe=1', 'a3btprobe=1', 'a5log=0'):
+                self.assertEqual(combined_args.count(arg), 1)
+            self.assertEqual(struct.unpack_from('<I', payload, 12)[0], 2)
+            self.assertFalse({'rd=emmcroot0', 'rd=md0', 'emmcwrite=1'} & set(combined_args))
+
     def test_collector_only_reads_phone(self):
         props = {'ro.product.device': 'a3y17lte', 'ro.build.product': 'a3y17lte',
                  'ro.product.model': 'SM-A320F', 'ro.twrp.version': '3.7.0'}
