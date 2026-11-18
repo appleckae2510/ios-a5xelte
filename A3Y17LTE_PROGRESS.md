@@ -318,3 +318,16 @@ These tests cover valid GPT, both bad CRCs, missing USERDATA and a gated
 host. They issued only card reads. The loader reached the early kernel
 marker from EL1 and EL2. The embedded HFS root matches v0.5. The physical
 v0.7.1 boot, including the diagnostic heartbeat, awaits a handset result.
+
+The subsequent two handset photos show the 720x1280 display and a panic
+with PC 0xfffffff00750846c, ESR 0x96000210 and FAR equal to x21 + 0x30.
+At this PC the distributed v0.7 BOOT contains `ldr w8, [x21, #48]`;
+the distributed v0.7.1 BOOT contains `add x0, x0, #3694`. Only the former
+instruction reads memory. The currently installed BOOT cannot be read
+from the photos. A fresh boot after checking the partition is pending.
+
+START-BOOTCHECK.cmd compares the first 27256848 bytes of the A320FL BOOT
+partition with both released images. The remaining bytes in the 32 MiB
+partition are outside both images. The helper stages the verified fix at
+a versioned path in recovery RAM if needed. The operator chooses Boot in
+TWRP, then the helper rereads the partition before reboot.

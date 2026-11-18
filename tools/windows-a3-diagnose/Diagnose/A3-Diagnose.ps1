@@ -3,7 +3,8 @@
 param(
     [string]$AdbPath,
     [string]$OutputDirectory,
-    [switch]$Hardware
+    [switch]$Hardware,
+    [switch]$BootCheck
 )
 
 Set-StrictMode -Version 2.0
@@ -144,7 +145,7 @@ function Find-Adb([string]$ExplicitPath) {
     $command = Get-Command 'adb.exe' -CommandType Application -ErrorAction SilentlyContinue
     if (-not $command) { $command = Get-Command 'adb' -CommandType Application -ErrorAction SilentlyContinue }
     if ($command) { return $command.Source }
-    throw "ADB fehlt. Oeffne ADB-HERUNTERLADEN.cmd, entpacke Googles ZIP und lege den kompletten Ordner 'platform-tools' neben START-DIAGNOSE.cmd."
+    throw "ADB fehlt. Entpacke Googles SDK Platform-Tools fuer Windows und lege den Ordner 'platform-tools' neben das Startskript."
 }
 
 function Confirm-BackupSource([string]$BootPath, [long]$BootSize) {
@@ -317,8 +318,13 @@ function Save-VerifiedBoot([string]$BootPath, [long]$BootSize) {
 
 function Main {
     Write-Host ''
-    Write-Host 'GALAXY A3 (2017) - DIAGNOSE FUER WINDOWS v1.1'
-    Write-Host 'Liest TWRP-Daten und sichert BOOT. Es wird nichts auf das Handy geschrieben.'
+    if ($BootCheck) {
+        Write-Host 'GALAXY A3 SM-A320FL - BOOT-Vergleich mit Panicfix v0.7.1'
+        Write-Host 'TWRP bleibt offen. Das PC-Programm liest BOOT und legt bei Bedarf ein Image in /tmp bereit.'
+    } else {
+        Write-Host 'GALAXY A3 (2017) - DIAGNOSE FUER WINDOWS v1.1'
+        Write-Host 'Liest TWRP-Daten und sichert BOOT. Es wird nichts auf das Handy geschrieben.'
+    }
     Write-Host ''
     $script:AdbExecutable = Find-Adb $AdbPath
     $deviceList = Read-AdbText -AdbArguments @('devices', '-l') -NoDevice
@@ -347,6 +353,12 @@ function Main {
     $matchesA3 = @($reported | Where-Object { $_ -in $codes }).Count -gt 0
     if (-not $matchesA3) { throw 'Dieses Geraet wird nicht eindeutig als a3y17lte erkannt. Abbruch.' }
     if (-not $properties['ro.twrp.version']) { throw 'TWRP nicht erkannt. Bitte TWRP manuell starten.' }
+
+    if ($BootCheck) {
+        . (Join-Path $PSScriptRoot 'A3-Bootvergleich.ps1')
+        Invoke-A3BootCheck $properties
+        return
+    }
 
     if (-not $OutputDirectory) { $OutputDirectory = Join-Path (Split-Path -Parent $PSScriptRoot) 'Ergebnisse' }
     [void][System.IO.Directory]::CreateDirectory($OutputDirectory)

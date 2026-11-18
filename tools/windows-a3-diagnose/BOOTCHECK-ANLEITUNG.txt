@@ -1,0 +1,24 @@
+Galaxy A3 (2017) SM-A320FL – BOOT-Check für Panicfix v0.7.1
+
+1. Entpacke dieses ZIP unter Windows. Lege deinen vorhandenen Ordner platform-tools mit adb.exe neben START-BOOTCHECK.cmd. ADB im Windows-PATH funktioniert ebenfalls. Falls du ADB erst brauchst, bekommst du die Windows Platform-Tools unter https://developer.android.com/tools/releases/platform-tools.
+2. Starte dein A3 in TWRP, bleibe im Hauptmenü und schließe es per USB an. Öffne START-BOOTCHECK.cmd auf dem PC. Die Zeile VORHER zeigt, welches Image direkt von der BOOT-Partition gelesen wurde.
+3. Bei „BOOT BESTAETIGT: v0.7.1“ ist die Korrektur bereits installiert. Starte direkt mit „Neustart → System“.
+4. Bei „v0.7“ oder „anderes Image“ überträgt das Programm den Fix nach /tmp und prüft ihn. Warte auf „Bereit in TWRP“. Wähle am A3 „Installieren → Image installieren“ (Install → Install Image). Navigiere zur Datei /tmp/A3-Panicfix-0.7.1-f7a14c90.img. Wähle ausschließlich „Boot“ und bestätige den Schieberegler. Das ZIP selbst ist ein Windows-Paket.
+5. Bleibe nach dem Flashen in TWRP. Drücke am PC die Eingabetaste. NACHHER zeigt die zweite Lesung der BOOT-Partition. Bei „BOOT BESTAETIGT: v0.7.1“ starte mit „Neustart → System“. Ein Wipe ist für diese Schritte unnötig.
+
+Wenn erneut eine Panic kommt, schick die Zeilen VORHER und gegebenenfalls NACHHER sowie ein kurzes, frisches Video vom Neustart in TWRP bis zum Fehler. Hilfreich sind „A3 HW: A3Y17LTE_HARDWARE_V2“, „A3 MODEM: CP registers skipped“ und die erste Panic-Zeile. Wiederholtes „SWEET init: still alive“ zeigt, dass das Diagnosesystem läuft.
+
+Was der Vergleich prüft
+
+Das Programm liest die ersten 27.256.848 Bytes aus der zu „BOOT“ gehörenden 32-MiB-Partition und bildet SHA-256. Die übrigen Bytes gehören nicht zur Image-Datei. Über USB kommt für den Vergleich nur die Prüfsumme zurück. Das Programm schreibt temporäre Dateien in /tmp. Eine Änderung an der BOOT-Partition erfolgt erst durch deinen Schieberegler in TWRP. „Anderes Image“ bedeutet nur, dass der gelesene Bereich zu keinem dieser beiden Abbilder passt.
+
+v0.7     a521de6192b4df7a75ab09d9c01b955eec059e0a6fa52b55a0274094dc3d8fa4
+v0.7.1   f7a14c90c37bd1f97227110de19703bb3ef76782fc107f5ab6c29b3c3d729884
+
+Sofortprüfung direkt am A3 (optional)
+
+In TWRP unter „Erweitert → Terminal“ kannst du denselben Bereich auslesen:
+    head -c 27256848 /dev/block/by-name/BOOT | sha256sum
+Vergleiche das Ergebnis mit den beiden vollständigen Werten oben. Ein abweichender Wert allein identifiziert kein bestimmtes Image.
+
+Die enthaltene Image-Datei ist bytegleich mit dem bereits veröffentlichten Panicfix v0.7.1. Für die Rückkehr zur ursprünglichen BOOT-Version enthält dein früheres Panicfix-Paket die Datei Original-BOOT-A320FL.img.
