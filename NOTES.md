@@ -1,12 +1,16 @@
-# A3Y17LTE compile handoff — 2026-11-17
+# A3Y17LTE compile handoff — 2026-11-18
 
-Preparing an A3-only XNU build on experiment/a3y17lte-xnu-20261117. The workflow
-fetches the pinned J7 donor f11e5d503398d814813899ffe531ad6521521b51 and layers
-0400-a3y17lte-entry-display-input.patch on top, using shared A5XELTE config.
-The runner is macos-15-intel, verified in this account's recent successful S7 CI.
-Source preparation and local loader/protocol checks passed; full XNU compilation
-has not completed yet. No phone is connected, flashed or claimed bootable.
-A3 details are in A3Y17LTE_PROGRESS.md. Existing donor notes follow unchanged.
+Full XNU build SUCCEEDED: run 44279066970, job 134714629781, source commit
+358a8532cff6a871b854dd65e06594237699228e, macos-15-intel / Xcode 16.
+The mandatory A3 source check, Cortex-A53 no-LSE check and A3 binary marker check
+all passed. Artifact a3-xnu-kernel is 14416297843. The downloaded kernel is
+17,656,024 bytes, SHA-256 748843e76d3c28fea64ef8c0543f17ccc7fd9e0029568a08c267dae85bf1490c.
+Local inspection confirmed plain ARM64 Mach-O, valid file-backed segments and the
+A3 marker; actual-kernel payload packing passed (17,027,680 bytes). This proves
+compilation and package compatibility, not an A3 boot or functioning iOS.
+Next: obtain the user's A3-Diagnose.zip / BOOT and live memory evidence before
+assembling a device-specific boot.img. Keep eMMC writes disabled in the entry kernel.
+The existing donor history follows unchanged.
 
 ---
 
