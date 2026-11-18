@@ -24,6 +24,8 @@ on:
     paths:
       - '.github/workflows/a3-xnu.yml'
       - 'xnu/a3y17lte-patches/**'
+      - 'xnu/a3y17lte/**'
+      - 'tests/a3-touch-syntax.c'
 
 concurrency:
   group: a3-xnu-${{ github.ref }}
