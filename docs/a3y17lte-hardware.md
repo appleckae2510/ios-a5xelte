@@ -18,6 +18,13 @@ comes from the A3 EUR revision 03 DTS in the pinned Samsung kernel.
 
 ## Current development build
 
+The SM-A320FL v0.7 boot video shows a kernel data abort in the hardware
+probe. The reported PC 0xfffffff00750846c is a 32-bit load from CP_CTRL_NS
+at physical 0x10480030. Patch 0403 removes the CP_CTRL_NS and CP_STAT reads.
+The diagnostic probe now maps the power-domain page 0x10484000 for audio
+and camera, then prints `A3 MODEM: CP registers skipped`. This message
+reports a skipped probe. No modem state is available from this test.
+
 Patch 0401 adds a3hwprobe=1 for a concise readout of the board's GPIO,
 clock and power state. a3btprobe=1 additionally sends the standard HCI Read
 Local Version command when the existing UART, power and pin state allow it.

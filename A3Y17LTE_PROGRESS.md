@@ -282,3 +282,39 @@ The public vendor reference also provides the firmware. Eleven files
 3f7ccfe439bc5f3f5971c9c53bb9ed96801fa9fc. QCA NVM type 2 has a 1997-byte
 payload and the type-1 rampatch has a 68896-byte payload. Reference blobs
 stay outside git. The Windows collector can compare the installed versions.
+
+## SM-A320FL v0.7 data abort and v0.7.1 correction
+
+The handset video shows the framebuffer and CPU timer running. The panic
+screen appears about 36 seconds into the recording. It reports a kernel
+data abort at PC 0xfffffff00750846c, ESR 0x96000210. The v0.7 binary
+resolves that PC to _a5xelte_touch_probe+0x16c. The hardware diagnostic
+inlined there executes `ldr w8, [x21, #0x30]`. The displayed FAR minus
+x21 is 0x30, the offset of CP_CTRL_NS in the mapped PMU.
+
+Using the v0.7 BOOT payload with the CP control page unavailable and the
+domain-status page accessible, the A53 fixture stops at the same PC on
+a four-byte read of physical 0x10480030. Earlier fixtures allowed this
+read and missed the handset failure.
+
+Patch 0403 omits both CP register reads. The diagnostic maps the single
+domain-status page at 0x10484000 for audio and camera. The host regression
+rejects a broad PMU mapping. The packer requires the hardware V2 marker
+when hardware probing is requested. The diagnostic still boots from md0
+with emmcwrite=0. The skipped modem probe provides no cellular status.
+
+Full XNU run 44386100921 succeeded at source
+11e3972a6bd3b3132375a102fb0fb520f0f12017. Kernel artifact 14467364320
+has archive SHA-256 55a3a5350268392d968785ead430610a29e221c9e091dadd325dee5ccdf6ad93.
+The rebuilt kernel SHA-256 is
+d58992a4f3aaf1ce8b87321b730478c04b97b9bf71f47559c2055a9f6a298e5a.
+The 27256848-byte v0.7.1 BOOT image SHA-256 is
+f7a14c90c37bd1f97227110de19703bb3ef76782fc107f5ab6c29b3c3d729884.
+
+The packed ARM64 probe returned in all nine peripheral fixtures with the
+CP page inaccessible. The five IOFindBSDRoot fixtures executed the probe,
+continued through the corresponding eMMC result and reached mdevlookup(0).
+These tests cover valid GPT, both bad CRCs, missing USERDATA and a gated
+host. They issued only card reads. The loader reached the early kernel
+marker from EL1 and EL2. The embedded HFS root matches v0.5. The physical
+v0.7.1 boot, including the diagnostic heartbeat, awaits a handset result.
