@@ -165,6 +165,8 @@ jobs:
           assert 'a3y17lte_touch_start();' in (root/'bsd/dev/a5xelte_touch.c').read_text()
           assert (root/'bsd/dev/a3_touch.inc').is_file()
           assert (root/'bsd/dev/a3_hardware.inc').read_bytes() == Path('xnu/a3y17lte/a3_hardware.inc').read_bytes()
+          assert (root/'bsd/dev/a3_boot_volume.inc').read_bytes() == Path('xnu/a3y17lte/a3_boot_volume.inc').read_bytes()
+          assert 'a3_ios_boot_candidate()' in (root/'iokit/bsddev/IOKitBSDInit.cpp').read_text()
           assert 'a3y17lte_hardware_probe();' in (root/'bsd/dev/a5xelte_touch.c').read_text()
           assert 'A3 writes require the selected USERDATA root' in (root/'bsd/dev/a5xelte_emmc.c').read_text()
           print('A3 geometry, touch source and write protection present')
@@ -354,6 +356,7 @@ jobs:
           assert b'A3Y17LTE_PORT_V1_720X1280_IST3038H' in p.read_bytes(), 'A3 marker missing'
           assert b'A3Y17LTE_HARDWARE_V2' in p.read_bytes(), 'A3 hardware probe fix missing'
           assert b'A3Y17LTE_USERDATA_RW_V1' in p.read_bytes(), 'A3 USERDATA bounds missing'
+          assert b'A3 COMBINED: RAM root' in p.read_bytes(), 'A3 combined boot missing'
           print('A3 entry kernel marker present; physical boot still untested')
           PYMARKER
 
