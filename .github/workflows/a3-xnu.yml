@@ -1,4 +1,5 @@
 name: a3-xnu
+run-name: A3Y17LTE XNU 16 entry build
 
 on:
   workflow_dispatch:
