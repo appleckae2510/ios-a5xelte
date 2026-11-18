@@ -161,8 +161,8 @@ new file mode 100644
 +    printf("A3 CAMERA: IMX258 IMX219 domain=%x io=%u core=%u rear_reset=%u front_reset=%u\n",
 +        a3hw_read(pmu, 0x4044), (power_dat >> 2) & 1u,
 +        (a3hw_read(top, 0x244) >> 1) & 1u, (power_dat >> 3) & 1u, (power_dat >> 1) & 1u);
-+    printf("A3 MODEM: SS315AP ctrl_ns=%x ctrl_s=%x stat=%x\n",
-+        a3hw_read(pmu, 0x30), a3hw_read(pmu, 0x34), a3hw_read(pmu, 0x38));
++    printf("A3 MODEM: SS315AP ctrl_ns=%x stat=%x\n",
++        a3hw_read(pmu, 0x30), a3hw_read(pmu, 0x38));
 +    PE_parse_boot_argn("a3btprobe", &bt, sizeof(bt));
 +    if (bt != 1) return;
 +    if (!(a3hw_read(mif, 0x8a0) & 1u) || !(a3hw_read(mif, 0x8a4) & 1u)) {
