@@ -97,8 +97,8 @@ def main():
     unpack_boot(original)
     kernel = a.kernel.read_bytes()
     if board.MARKER not in kernel: raise ValueError('Kernel lacks A3 marker; J7/S7 kernels are refused')
-    if a.probe_hardware and b'A3Y17LTE_HARDWARE_V1' not in kernel:
-        raise ValueError('Hardware probe needs the A3 kernel with patch 0401')
+    if a.probe_hardware and b'A3Y17LTE_HARDWARE_V2' not in kernel:
+        raise ValueError('Hardware probe needs the A3 kernel with patch 0403 (CP registers skipped)')
     if a.ios_root and b'A3Y17LTE_USERDATA_RW_V1' not in kernel:
         raise ValueError('USERDATA root needs the A3 kernel with patch 0402')
     m = mkpayload.parse_macho(kernel)

@@ -138,9 +138,17 @@ class A3Tools(unittest.TestCase):
             self.assertEqual(probe[0x48:0x2a8].split(b'\0', 1)[0].decode().split(), expected_args)
             self.assertEqual((probe[:0x48], probe[0x2a8:]), (payload[:0x48], payload[0x2a8:]))
             self.assertTrue(json.loads((d/'entry.json').read_text())['emmc_probe_requested'])
-            with patch.object(sys, 'argv', argv + ['--probe-hardware']):
-                with self.assertRaisesRegex(ValueError, 'patch 0401'):
-                    pack.main()
+            for version in (b'V1', b'V2'):
+                marker = b'A3Y17LTE_HARDWARE_' + version
+                k[446:446+len(marker)] = marker
+                (d/'kernel').write_bytes(k)
+                with patch.object(sys, 'argv', argv + ['--probe-hardware']):
+                    if version == b'V1':
+                        with self.assertRaisesRegex(ValueError, 'patch 0403'):
+                            pack.main()
+                    else:
+                        pack.main()
+                        self.assertTrue(json.loads((d/'entry.json').read_text())['hardware_probe_requested'])
             with patch.object(sys, 'argv', argv + ['--ios-root']):
                 with self.assertRaisesRegex(ValueError, 'patch 0402'):
                     pack.main()

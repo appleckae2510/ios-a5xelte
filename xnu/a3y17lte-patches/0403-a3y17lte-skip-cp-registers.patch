@@ -1,0 +1,37 @@
+diff --git a/bsd/dev/a3_hardware.inc b/bsd/dev/a3_hardware.inc
+--- a/bsd/dev/a3_hardware.inc
++++ b/bsd/dev/a3_hardware.inc
+@@ -79,12 +79,14 @@
+     unsigned enabled = 0, bt = 0;
+     PE_parse_boot_argn("a3hwprobe", &enabled, sizeof(enabled));
+     if (enabled != 1) return;
+-    printf("A3 HW: A3Y17LTE_HARDWARE_V1\n");
++    printf("A3 HW: A3Y17LTE_HARDWARE_V2\n");
+     vm_offset_t top = ml_io_map(0x139b0000u, 0x1000);
+     vm_offset_t alive = ml_io_map(0x139f0000u, 0x1000);
+     vm_offset_t mif = ml_io_map(0x10460000u, 0x1000);
+-    vm_offset_t pmu = ml_io_map(0x10480000u, 0x5000);
+-    if (!top || !alive || !mif || !pmu) {
++    /* The A320FL aborts on direct CP_CTRL_NS reads. Only map the
++     * power-domain status page needed by audio and camera. */
++    vm_offset_t domains = ml_io_map(0x10484000u, 0x1000);
++    if (!top || !alive || !mif || !domains) {
+         printf("A3 HW: register mapping unavailable\n");
+         return;
+     }
+@@ -97,12 +99,11 @@
+     printf("A3 WLAN: QCOM SDIO EN=%u HOST=%u clock=%x\n",
+         (a3hw_read(top, 0x144) >> 6) & 1u,
+         (a3hw_read(alive, 0x84) >> 2) & 1u, a3hw_read(mif, 0x88c));
+-    printf("A3 AUDIO: COD3026X TFA9896 domain=%x\n", a3hw_read(pmu, 0x4024));
++    printf("A3 AUDIO: COD3026X TFA9896 domain=%x\n", a3hw_read(domains, 0x24));
+     printf("A3 CAMERA: IMX258 IMX219 domain=%x io=%u core=%u rear_reset=%u front_reset=%u\n",
+-        a3hw_read(pmu, 0x4044), (power_dat >> 2) & 1u,
++        a3hw_read(domains, 0x44), (power_dat >> 2) & 1u,
+         (a3hw_read(top, 0x244) >> 1) & 1u, (power_dat >> 3) & 1u, (power_dat >> 1) & 1u);
+-    printf("A3 MODEM: SS315AP ctrl_ns=%x stat=%x\n",
+-        a3hw_read(pmu, 0x30), a3hw_read(pmu, 0x38));
++    printf("A3 MODEM: CP registers skipped\n");
+     PE_parse_boot_argn("a3btprobe", &bt, sizeof(bt));
+     if (bt != 1) return;
+     if (!(a3hw_read(mif, 0x8a0) & 1u) || !(a3hw_read(mif, 0x8a4) & 1u)) {
