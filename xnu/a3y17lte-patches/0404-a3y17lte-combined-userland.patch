@@ -192,8 +192,35 @@ index 27ecdb9..8a23b62 100644
 +}
 +#endif
  #endif /* ARM64_BOARD_CONFIG_A5XELTE */
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+index c11ea3b..714bcd9 100644
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -438,6 +438,9 @@ set_rootvnode(vnode_t new_rootvnode)
+ 	}
+ }
+ 
++#if defined(ARM64_BOARD_CONFIG_A5XELTE)
++#include <pexpert/arm64/board_config.h>
++#endif
+ #define RAMDEV "md0"
+ 
+ bool
+@@ -450,6 +453,12 @@ bsd_rooted_ramdisk(void)
+ 	}
+ 
+ 	if (PE_parse_boot_argn("rd", dev_path, MAXPATHLEN)) {
++#if defined(A3Y17LTE)
++        /* IOFindBSDRoot resolves a3auto into the actual BSD device name. */
++        if (!strcmp(dev_path, "a3auto")) {
++            is_ramdisk = !strcmp(rootdevice, RAMDEV);
++        } else
++#endif
+ 		if (strncmp(dev_path, RAMDEV, strlen(RAMDEV)) == 0) {
+ 			is_ramdisk = true;
+ 		}
 diff --git a/iokit/bsddev/IOKitBSDInit.cpp b/iokit/bsddev/IOKitBSDInit.cpp
-index 10449ab..1d22f60 100644
+index 10449ab..caf4cf6 100644
 --- a/iokit/bsddev/IOKitBSDInit.cpp
 +++ b/iokit/bsddev/IOKitBSDInit.cpp
 @@ -68,7 +68,11 @@ extern void di_root_ramfile(IORegistryEntry * entry);
@@ -208,7 +235,7 @@ index 10449ab..1d22f60 100644
  extern void a5xelte_keys_init(void);
  extern void a5xelte_touch_probe(void);
  #endif
-@@ -784,6 +788,21 @@ IOFindBSDRoot( char * rootName, unsigned int rootNameSize,
+@@ -784,6 +788,22 @@ IOFindBSDRoot( char * rootName, unsigned int rootNameSize,
  #else
  	/* Exynos 7580 I2C touch. */
  	a5xelte_touch_probe();
@@ -217,9 +244,10 @@ index 10449ab..1d22f60 100644
 +    {
 +        uint32_t combined = 0;
 +        PE_parse_boot_argn("a3combined", &combined, sizeof(combined));
-+        if (combined == 1 && !strcmp(rdBootVar, "md0")) {
++        if (combined == 1 && !strcmp(rdBootVar, "a3auto")) {
 +            const char *reason = mountAttempts == 1 ? a3_ios_boot_candidate() : "previous mount failed";
 +            if (reason) {
++                strlcpy(rdBootVar, "md0", kMaxBootVar);
 +                IOLog("A3 COMBINED: RAM root (%s)\n", reason);
 +            } else {
 +                IOLog("A3 COMBINED: iOS root selected; starting Apple userland\n");
