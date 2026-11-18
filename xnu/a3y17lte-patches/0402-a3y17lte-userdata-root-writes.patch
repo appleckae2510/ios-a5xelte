@@ -1,0 +1,26 @@
+diff --git a/bsd/dev/a5xelte_emmc.c b/bsd/dev/a5xelte_emmc.c
+--- a/bsd/dev/a5xelte_emmc.c
++++ b/bsd/dev/a5xelte_emmc.c
+@@ -391,7 +391,11 @@
+ emmc_write_sector(uint32_t lba, const uint8_t *sector)
+ {
+ #if defined(A3Y17LTE)
+-	return EROFS; /* Entry-stage kernel cannot write any eMMC sector. */
++	/* A3 writes require the selected USERDATA root and stay in its GPT extent. */
++	if (!emmc_ready || !emmc_writable || strcmp(emmc_partition_name, "USERDATA") ||
++	    (uint64_t)lba < emmc_first_lba || (uint64_t)lba - emmc_first_lba >= emmc_nsectors) {
++		return EROFS;
++	}
+ #endif
+ 	uint64_t data[64];
+ 	uint32_t hcon = emmc_rd(EMMC_HCON);
+@@ -627,6 +631,9 @@
+ 	int enable_write = 0;
+ 	(void)PE_parse_boot_argn("emmcwrite", &enable_write, sizeof(enable_write));
+ 	emmc_writable = !strcmp(emmc_partition_name, "USERDATA") && enable_write == 1;
++#if defined(A3Y17LTE)
++	printf("A3 STORAGE: A3Y17LTE_USERDATA_RW_V1 enabled=%u\n", emmc_writable ? 1u : 0u);
++#endif
+ 	printf("A5XELTE eMMC: GPT %s first=%llu sectors=%llu %s\n",
+ 	    emmc_partition_name, emmc_first_lba, emmc_nsectors,
+ 	    emmc_writable ? "writable" : "read-only");

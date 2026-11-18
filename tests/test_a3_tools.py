@@ -138,6 +138,23 @@ class A3Tools(unittest.TestCase):
             self.assertEqual(probe[0x48:0x2a8].split(b'\0', 1)[0].decode().split(), expected_args)
             self.assertEqual((probe[:0x48], probe[0x2a8:]), (payload[:0x48], payload[0x2a8:]))
             self.assertTrue(json.loads((d/'entry.json').read_text())['emmc_probe_requested'])
+            with patch.object(sys, 'argv', argv + ['--probe-hardware']):
+                with self.assertRaisesRegex(ValueError, 'patch 0401'):
+                    pack.main()
+            with patch.object(sys, 'argv', argv + ['--ios-root']):
+                with self.assertRaisesRegex(ValueError, 'patch 0402'):
+                    pack.main()
+            marker = b'A3Y17LTE_USERDATA_RW_V1'
+            k[472:472+len(marker)] = marker
+            (d/'kernel').write_bytes(k)
+            with patch.object(sys, 'argv', argv + ['--ios-root']):
+                pack.main()
+            ios_payload = pack.unpack_boot((d/'entry.img').read_bytes())[1][0x4010:]
+            ios_args = ios_payload[0x48:0x2a8].split(b'\0', 1)[0].decode().split()
+            for arg in ('rd=emmcroot0', 'emmcroot=USERDATA', 'emmcwrite=1', 'a5log=0'):
+                self.assertEqual(ios_args.count(arg), 1)
+            self.assertNotIn('rd=md0', ios_args)
+            self.assertEqual(struct.unpack_from('<I', ios_payload, 12)[0], 1)
 
     def test_collector_only_reads_phone(self):
         props = {'ro.product.device': 'a3y17lte', 'ro.build.product': 'a3y17lte',

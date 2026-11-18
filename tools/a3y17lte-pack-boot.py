@@ -67,6 +67,9 @@ def main():
     p.add_argument('--kernel', required=True, type=Path, help='A3-specific XNU from a3-xnu CI')
     p.add_argument('--loader', required=True, type=Path)
     p.add_argument('--ramdisk', type=Path, help='optional md0 image (HFS volume or mockfs test executable)')
+    p.add_argument('--product-adt', type=Path, help='matching Apple product metadata from the root build')
+    p.add_argument('--ios-root', action='store_true',
+                   help='boot a separately installed HFSX iOS root from USERDATA with writes inside that partition')
     p.add_argument('--probe-emmc', action='store_true',
                    help='read the internal GPT and report USERDATA while booting from md0')
     p.add_argument('--probe-hardware', action='store_true',
@@ -75,6 +78,8 @@ def main():
     p.add_argument('--allow-unverified-handoff', action='store_true',
                    help='acknowledge that each new image needs a hardware trial')
     a = p.parse_args()
+    if a.ios_root and a.ramdisk:
+        p.error('--ios-root and --ramdisk select different root devices')
     if not a.allow_unverified_handoff:
         p.error('Review the handoff for this image and pass --allow-unverified-handoff to build it.')
     with zipfile.ZipFile(a.evidence) as z:
@@ -94,6 +99,8 @@ def main():
     if board.MARKER not in kernel: raise ValueError('Kernel lacks A3 marker; J7/S7 kernels are refused')
     if a.probe_hardware and b'A3Y17LTE_HARDWARE_V1' not in kernel:
         raise ValueError('Hardware probe needs the A3 kernel with patch 0401')
+    if a.ios_root and b'A3Y17LTE_USERDATA_RW_V1' not in kernel:
+        raise ValueError('USERDATA root needs the A3 kernel with patch 0402')
     m = mkpayload.parse_macho(kernel)
     if m['cputype'] != 0x100000c or m['cpusub'] != 0 or m['entry'] is None:
         raise ValueError('Need plain ARM64 A3 Mach-O, not ARM64e/PAC')
@@ -102,14 +109,21 @@ def main():
         raise ValueError('Not the compiled A3 entry loader')
     a.output.parent.mkdir(parents=True, exist_ok=True)
     storage_args = 'emmcprobe=1 emmcroot=USERDATA' if a.probe_emmc else 'emmcprobe=0'
+    storage_args += ' emmcwrite=0'
+    root_device = 'md0'
+    if a.ios_root:
+        root_device = 'emmcroot0'
+        storage_args = 'emmcprobe=0 emmcroot=USERDATA emmcwrite=1'
     hardware_args = ' a3hwprobe=1 a3btprobe=1' if a.probe_hardware else ''
-    cmdline = ('debug=0xc serial=3 cpus=1 keepsyms=1 -noprogress rd=md0 '
+    cmdline = (f'debug=0xc serial=3 cpus=1 keepsyms=1 -noprogress rd={root_device} '
                'j7hw=1 j7keys_layout=1 a3touch=0 j7fg=0 j7gpu=0 a5gpu=0 '
-               f'{storage_args} emmcwrite=0 a5log=0 sweetfb_scale=1 sweetfb_lw=750 sweetfb_lh=1334'
+               f'{storage_args} a5log=0 sweetfb_scale=1 sweetfb_lw=750 sweetfb_lh=1334'
                f'{hardware_args}')
     with tempfile.TemporaryDirectory() as staging:
         tree_path = Path(staging) / 'board.adt'
-        tree_path.write_bytes(adt.serialize(board.build()))
+        if a.product_adt and not a.product_adt.is_file():
+            raise ValueError('Product ADT file is missing')
+        tree_path.write_bytes(adt.serialize(board.build(a.product_adt)))
         payload, info = mkpayload.build(str(a.kernel), str(tree_path), cmdline,
                                         str(a.ramdisk) if a.ramdisk else None)
     combined = bytearray(loader.ljust(0x4000, b'\0')) + b'A3XNPAY1' + struct.pack('<Q', len(payload)) + payload
@@ -122,10 +136,14 @@ def main():
     dt_offset, dt_length = struct.unpack_from('<QQ', payload, 0x20)
     a.output.with_suffix('.adt').write_bytes(payload[dt_offset:dt_offset + dt_length])
     stage = 'RAM ROOT TEST' if a.ramdisk else 'ENTRY TEST ONLY'
+    root_source = 'RAM disk' if a.ramdisk else 'none; expected stop at root resolution'
+    if a.ios_root:
+        stage = 'USERDATA IOS ROOT CANDIDATE'
+        root_source = 'pre-installed HFSX iOS root in USERDATA'
     report = {'target': 'a3y17lte', 'stage': stage, 'phone_boot_tested': False,
               'emmc_probe_requested': a.probe_emmc,
               'hardware_probe_requested': a.probe_hardware,
-              'root': 'RAM disk' if a.ramdisk else 'none; expected stop at root resolution',
+              'root': root_source,
               'size': len(result), 'sha256': hashlib.sha256(result).hexdigest(),
               'dtbh_source': 'unaltered device BOOT backup', 'flashed': False,
               'kernel_sha256': hashlib.sha256(kernel).hexdigest(), 'cmdline': cmdline,
