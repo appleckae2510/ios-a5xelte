@@ -42,3 +42,178 @@ Local ARM64 Mach-O/segment inspection and real-kernel payload packing passed
 (17,027,680-byte payload). Kernel identifies xnu-8796.141.3 / Darwin 22.6.0.
 No physical A3 boot or iOS runtime test has taken place; no device partition
 was written. BOOT/live memory evidence from A3-Diagnose remains the next input.
+
+## 2026-11-18 — standalone Windows diagnostic package
+
+Added tools/windows-a3-diagnose: a PowerShell 5.1-compatible collector and CMD
+launchers, without a Python requirement. It locates existing ADB, pins every
+device command to the selected A3, streams BOOT as binary, hashes the backup,
+and creates the manifest/ZIP consumed by the entry-image tooling. It never
+sends phone write/flash/reboot commands. ADB is obtained separately from Google.
+Seven integration checks passed with an ADB simulator in PowerShell 7.7 on Linux:
+binary integrity, ambiguous/foreign devices, missing TWRP root, interrupted copy,
+missing optional files and an unknown BOOT format. Script parsing also passed.
+Actual Windows USB/phone operation has not been tested in this environment.
+
+## 2026-11-18 — Windows BOOT backup v1.1 correction
+
+Reproduced v1.0's misleading cable error with a complete transfer followed by
+remote dd status counters. ADB's raw exec-out protocol merges remote stderr
+into stdout; dd's record counters were included in the binary byte count.
+The collector now redirects remote stderr before transport, reads 1-MiB chunks
+using 64-KiB dd blocks, retries only a failed chunk up to three times, and checks
+the original serial/TWRP root/device/BOOT mapping again before retries. It accepts
+both device and recovery states instead of using wait-for-device in TWRP.
+Before publishing boot.img, it compares SHA-256 with the device (or two independent
+complete reads when the recovery has no SHA-256 utility). A hash mismatch permits
+one complete re-read; unverified data never becomes a success ZIP. Failure logs
+include real ADB exit codes, byte counts and PowerShell locations without inferring
+a cable defect. Optional raw reads also suppress remote error text.
+
+Seventeen simulator integration tests passed in PowerShell 7.7/Linux, including
+the original stderr regression, non-aligned final chunk, short/disconnected reads,
+per-chunk recovery, same-size corruption, persistent corruption, missing hash
+utilities, inconsistent double reads, source identity changes and oversize data.
+PowerShell parsing passed. Native Windows USB and a physical A3 remain untested.
+
+## 2026-11-18 — user A320FL evidence and first entry image
+
+Received A3-Diagnose.zip from Windows collector v1.1. All 18 manifest file sizes
+and SHA-256 values and ZIP CRCs matched. The 32-MiB BOOT backup was reported as
+device-SHA-256-verified. Its bootloader/model evidence identifies SM-A320FL,
+a3y17lte; live TWRP model is EUR rev03, hardware revision 4 (the DTBH rev03..255
+entry applies). Device dumps and identifiers stay outside git.
+
+BOOT: legacy Android header, 2048-byte pages, original digest includes the empty
+second component; four Exynos7870 A3Y17 EUR DTBH profiles. All profiles and the
+uploaded memory properties agree on lower RAM 0x40000000+0x3e400000, upper RAM
+0x80000000+0x40000000, and FB handover 0x67000000+0x00a00000. The candidate XNU
+window 0x92000000..0xae000000 fits upper RAM and does not overlap static reserved
+regions in any profile. TWRP reports 32-bpp, 2880-byte rows, virtual 720x2560 and
+mode 720x1280p-59. These are Linux observations, not an S-Boot scanout guarantee.
+The optional live FDT export is absent; original DTBH/FDT profiles are available.
+
+Packaged A3-A320FL-XNU-Entry-Test-v0.2.img using the already verified full A3 XNU
+kernel and loader. Size: 18,849,808 bytes, below BOOT's 33,554,432 bytes. Original
+ramdisk and all DTBH bytes are preserved. One CPU, touch/GPU/eMMC probing off,
+and sector writes rejected by the A3 kernel. No HFS RAM root or iOS userspace is
+included; a stop at root resolution is expected if execution reaches that stage.
+Five A3 packer/collector tests passed. The image is a first hardware trial, not a
+working iOS ROM; it has not been flashed or booted. Next observation: loader/XNU
+screen or failure state, while preserving an off-device original BOOT and EFS.
+
+## 2026-11-18 — SM-A320FL early display and XNU entry v0.3
+
+The phone photo shows the Samsung Galaxy A3 / Powered by Android splash. A single
+photo gives no evidence of the execution stage. The v0.3 loader draws LOADING
+XNU after the board check and before the first XNU segment copy. It requests a
+new frame on a matching live Exynos7870 command-mode window and draws STARTING
+XNU immediately before handoff. There is no display dwell or trigger wait.
+The arm64 header matches the original load offset and flags. Tests used the
+previously built A3 XNU from run 44279066970, without an iOS root filesystem.
+
+The packed image executed in Cortex-A53 emulation using the A320FL rev03 FDT.
+Five runs covered hardware trigger, software trigger and the second framebuffer,
+display power or clocks off, and non-secure EL2 entry. Each reached EL1, passed
+the loaded segment/boot_args/ADT checks, entered XNU at 0x934a3488 and observed
+XNU write XNUELTE1 at 0x679ff100. In the v0.2 control, framebuffer writes
+followed the first kernel copy. All five A3 packaging tests also passed.
+The emulator models the registers; physical AMOLED behavior and progress on
+the A320FL under v0.3 still require a device observation.
+
+## 2026-11-18 — XNU console on the A320FL and v0.4 RAM-root test
+
+After the v0.3 handoff, the user supplied a handset photo showing the XNU
+console. AppleCLCD reports 720×1280, stride 2880 at 0x67000000 and a 750×1334
+logical canvas. The kernel reports one initialized CPU, SGI1 verified and a
+timer wake after 21056 microseconds. It also prints MAC framework initialization,
+IOCoreSurfaceRoot and HID service registration. The battery value is explicitly
+reported as a static fallback. Actual touch events, a mount of md0, PID 1 and
+SpringBoard are not visible. The build ID is not printed in the photo.
+
+Prepared a separate v0.4 BOOT test with the same loader and XNU segments.
+The packer embeds the project's static ARM64 init as md0 for mockfs, and emits
+the exact DT passed to the kernel, including /chosen/memory-map/RAMDisk.
+The image is 18,866,192 bytes. Three Cortex-A53 runs verified the 11 loaded
+segments, the kernel boot arguments and initial XNU execution. The RAM root
+uses 20,480 bytes at 0x94560000. All four code-signature page hashes of init
+matched. The executable produced the runtime PID supplied in separate syscall
+unit tests with PID 1 and PID 7. Both completed two heartbeat writes.
+The next device evidence is BSD root: md0 followed by the init PID and
+heartbeat. The enhanced host tests passed. This package contains no Apple
+userspace and has not been run on the handset.
+
+## 2026-11-18 — RAM-root PID 1 demonstrated and HFS+ root v0.5 prepared
+
+The user's three photos show the A3Y17LTE_PORT_V1_720X1280_IST3038H marker
+with touch=0, BSD root md0, the diagnostic init running as PID 1 and repeated
+SWEET init: still alive messages. This demonstrates continued execution of
+the test process on the handset. Its mockfs root was the executable itself.
+The photos also show a single initialized CPU and the display console.
+Touch registration, loopback/gif/stf software interfaces and the static battery
+fallback do not establish touch, Wi-Fi, Bluetooth or battery measurement.
+
+Prepared a separate v0.5 image with an 8 MiB HFS+ volume named A3TestRoot.
+Its /sbin/launchd is byte-identical to the init in the hardware-tested v0.4
+package. The volume has root-owned 0755 directories /dev and /sbin and a
+root-owned 0755 executable. hfsprogs 540.1-Linux completed its full read-only
+check successfully. File extraction matched the source hash. Both volume
+headers match and the clean-unmounted flag is set, with journaling off.
+Used the Debian trixie hfsprogs package verified against its published SHA256
+and mozilla/libdmg-hfsplus e18579b391950589b9ed16ee630c54ce4319bb29.
+
+The image is 27,238,416 bytes and preserves all ten XNU segments, Android
+ramdisk, DTBH profiles, boot addresses and boot arguments. RAMDisk is 8 MiB
+at physical 0x94560000, bounded inside the existing XNU RAM window. Three
+Cortex-A53 loader runs verified all 11 copied segments, boot_args and ADT,
+and reached the kernel's entry marker. Host emulation ends in early XNU and
+does not demonstrate an HFS mount on the phone. Next device result needed is
+the HFS mount of A3TestRoot followed by the PID 1 heartbeat. Full Apple
+userland, writable storage and SpringBoard remain pending.
+
+## 2026-11-18 — HFS+ root confirmed on SM-A320FL and read-only eMMC test v0.6
+
+The latest handset photo shows `hfs: mounted A3TestRoot on device b(1, 0)`,
+the project init running as PID 1 and two heartbeats. This demonstrates the
+v0.5 filesystem mount and execution of its diagnostic init on the phone.
+
+With the same loader, kernel and HFS+ volume, adding `--probe-emmc` to the
+A3 BOOT packer enables the GPT probe for USERDATA. The package keeps
+`rd=md0 emmcwrite=0 a5log=0`. It reads the GPT header and entries during
+IOFindBSDRoot. The A3 kernel also returns EROFS from the sector write path.
+Stock recovery identifies USERDATA as mmcblk0p24 with 11853807 KiB. All
+four stock FDT profiles and the payload ADT agree on the DW-MMC register
+window at 0x13540000 (size 0x2000). The stock profiles specify a 64-entry FIFO.
+
+The 27238416-byte image differs from v0.5 only in the storage options, the
+fresh ADT seed and the BOOT digest. The three Cortex-A53 loader tests reached
+the early XNU marker. Separately, the actual packed kernel instructions ran
+from the IOFindBSDRoot probe option check through the GPT scan on a simulated
+host. A synthetic GPT with 128 entries produced 33 CMD17 reads and the
+correct USERDATA extent. Corrupt header, corrupt entries, missing partition
+and disabled clock fixtures reported their respective errors. No card write
+commands occurred in these runs. Physical eMMC access remains unverified
+until the phone prints `GPT USERDATA first=… sectors=… read-only`.
+
+## 2026-11-18 — requested radio, audio, camera and modem integration
+
+Reviewed current Note FE 76abd2e6d97e9b60464255d1c6cf1d2e57a9325d
+and S7 2aafd7a0a1422a538399c449e160219b8aeba65e references. Their Apple-facing
+audio/capture/HCI interfaces are useful references. The A3 uses QCA6174 over
+UART0 and Qualcomm SDIO WLAN, COD3026X with TFA9896, and IMX258/IMX219.
+The source identifies an SS315AP modem. These need A3-specific transports,
+power and firmware integration. No physical success for these is claimed.
+
+Added A3-only patch 0401 for source-derived GPIO/clock/power observations and
+an opt-in H4 Read Local Version transaction. It transmits only when the source
+and peripheral clocks, power pins, mux and UART mode are ready. The existing
+UART baud configuration is observed. An aggregate poll budget bounds waiting.
+This stage does not initialize a powered-off chip or load Qualcomm firmware.
+The packer requires the new binary marker for --probe-hardware, while ordinary
+v0.5/v0.6 boot options retain their existing behavior.
+
+A separate 10 GiB HFSX iOS root candidate is building in the owner's existing
+private root project, run 44339908078. It uses Apple's iPhone 8 Plus iOS 16.7.16
+20H392 source, d21ap product metadata, full apps and stock assets. It has no
+A3 phone installation step. iOS root boot and all five requested hardware
+features remain pending physical and driver integration.
