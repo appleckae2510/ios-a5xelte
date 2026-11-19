@@ -8,6 +8,9 @@ def select_target(source):
     make_target = "SDKROOT=iphoneos SDKVERSION=16.7 ARCH_STRING_FOR_CURRENT_MACHINE_CONFIG=arm64"
     xcode_target = "-sdk iphoneos SUPPORTED_PLATFORMS=iphoneos IPHONEOS_DEPLOYMENT_TARGET=16.7"
     replacements = [
+        ("    patches\n    venv",
+         '    patches\n    python3 "../tools/a3-native-sources.py" "$WORK_DIR/xnu" '
+         '"../xnu/a3y17lte-patches/0404-a3y17lte-combined-userland.patch"\n    venv', 1),
         ('make installhdrs SDKROOT=macosx ARCH_CONFIGS="X86_64 ARM64"',
          f"make installhdrs {make_target} ARCH_CONFIGS=ARM64", 1),
         ("SDKROOT=macosx TARGET_CONFIGS=", f"{make_target} TARGET_CONFIGS=", 3),

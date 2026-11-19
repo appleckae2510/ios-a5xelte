@@ -3,7 +3,7 @@ run-name: A320FL native iPhoneOS 16 kernel
 on:
   push:
     branches: [experiment/a3y17lte-iphoneos-20261119]
-    paths: ['.github/workflows/a3-iphoneos.yml', 'tools/a3-native-target.py', 'tools/a3-check-kernel-target.py', 'xnu/a3y17lte-patches/**']
+    paths: ['.github/workflows/a3-iphoneos.yml', 'tools/a3-native-target.py', 'tools/a3-check-kernel-target.py', 'tools/a3-native-sources.py', 'tools/a3-compile-loader.py', 'xnu/a3y17lte-patches/**']
   workflow_dispatch:
 
 permissions:
@@ -20,6 +20,42 @@ env:
   MACHINE_CONFIG: A5XELTE
 
 jobs:
+  loaders:
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: apple-oss-distributions/xnu
+          ref: 1b191cb58250d0705d8a51287127505aa4bc0789
+          path: upstream-xnu
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: xnu-buildtree
+          run-id: 44415023180
+          github-token: ${{ github.token }}
+          path: previous-tree
+      - uses: actions/download-artifact@v4
+        with:
+          name: a3-xnu-build-log
+          run-id: 44415023180
+          github-token: ${{ github.token }}
+          path: previous-log
+      - name: Compile pristine Apple exec and Mach-O code for A3
+        run: |
+          set -euo pipefail
+          xc=$(ls -d /Applications/Xcode_16*.app | sort -V | head -1)
+          export DEVELOPER_DIR="$xc/Contents/Developer"
+          dir=$(mktemp -d)
+          tar -xzf previous-tree/buildtree.tgz -C "$dir"
+          python3 tools/a3-compile-loader.py "$dir" upstream-xnu previous-log/build.log
   build:
     # macos-15 has Xcode 16.x only (macos-14, with 15.x, is retired): see the Xcode step below
     runs-on: macos-15-intel
@@ -55,21 +91,9 @@ jobs:
             --output "$RUNNER_TEMP/a3-builder.tgz"
           tar -xzf "$RUNNER_TEMP/a3-builder.tgz" --strip-components=1 -C dxb
 
-          # Stage the board, display, storage and build support for this native configuration.
-          # The process loader and entitlement policy use the native XNU implementation.
-          python3 - <<'PYBOARD'
-          from pathlib import Path
-          import shutil
-          families = (range(1, 15), range(16, 25), range(26, 29), range(32, 35),
-                      range(45, 50), range(51, 57), range(58, 64), range(65, 70),
-                      range(71, 105), range(108, 129), range(300, 312),
-                      range(314, 354), range(356, 371), range(376, 377))
-          selected = {n for family in families for n in family} | {37, 39, 40, 41}
-          for path in Path('donor-patchset/xnu/patches').iterdir():
-              if path.suffix in {'.patch', '.sh'} and path.name[:4].isdigit():
-                  if int(path.name[:4]) in selected:
-                      shutil.copyfile(path, Path('dxb/patches') / path.name)
-          PYBOARD
+          # Resolve cross-file hardware changes in the donor's original patch order.
+          # The target preparation restores the native Apple execution and mount paths.
+          cp donor-patchset/xnu/patches/*.patch donor-patchset/xnu/patches/*.sh dxb/patches/
           cp xnu/a3y17lte-patches/*.patch dxb/patches/
           python3 tools/a3-native-target.py dxb/build.sh
 
