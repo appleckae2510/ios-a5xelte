@@ -19,6 +19,7 @@ env:
   MACOS_VERSION: '13.5'  # source tag xnu-8796.141.3
   KERNEL_CONFIG: DEVELOPMENT
   MACHINE_CONFIG: A5XELTE
+  NATIVE_KERNEL: dxb/fakeroot/mach.development.a5xelte
 
 jobs:
   loaders:
@@ -200,9 +201,8 @@ jobs:
         run: |
           test -f build.log || exit 0
 
-          kernel="dxb/fakeroot/System/Library/Kernels/kernel.$(echo "$KERNEL_CONFIG" | tr A-Z a-z).$(echo "$MACHINE_CONFIG" | tr A-Z a-z)"
-          if [ -f "$kernel" ]; then
-            echo "kernel built: $kernel"
+          if [ -s "$NATIVE_KERNEL" ]; then
+            echo "kernel built: $NATIVE_KERNEL"
             exit 0
           fi
 
@@ -242,17 +242,16 @@ jobs:
           PY
           exit 1
 
-      - name: Collect
-        if: always()
+      - name: Collect freshly linked iPhoneOS kernel
+        id: collect
         run: |
+          set -euo pipefail
+          object="dxb/build/xnu.obj/DEVELOPMENT_ARM64_A5XELTE/mach.development.a5xelte"
+          test -s "$object"
+          cmp "$object" "$NATIVE_KERNEL"
           mkdir -p out
-
-          if [ -d dxb/fakeroot/System/Library/Kernels ]; then
-            cp -R dxb/fakeroot/System/Library/Kernels/. out/ 2>/dev/null || true
-          fi
-
-          ls -la out
-          (cd out && shasum -a 256 kernel.* > SHA256SUMS) || true
+          cp "$NATIVE_KERNEL" out/kernel.development.a5xelte
+          (cd out && shasum -a 256 kernel.development.a5xelte > SHA256SUMS)
 
       - name: Check Cortex-A53 compatibility (no ARMv8.1 LSE atomics)
         if: env.MACHINE_CONFIG == 'A5XELTE' || env.MACHINE_CONFIG == 'HEROLTE'
@@ -322,3 +321,11 @@ jobs:
           name: a3-native-kernel
           path: out/kernel.*.a5xelte
           if-no-files-found: error
+
+      - name: Retain kernel for analysis if validation fails
+        if: failure() && steps.collect.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: a3-unverified-kernel
+          path: out/kernel.development.a5xelte
+          retention-days: 3
