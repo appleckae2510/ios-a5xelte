@@ -17,7 +17,7 @@ def select_target(source):
         ("xcodebuild installhdrs -sdk macosx", f"xcodebuild installhdrs {xcode_target}", 2),
         ('-target libfirehose_kernel -sdk macosx ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"',
          f"-target libfirehose_kernel {xcode_target} ARCHS=arm64 VALID_ARCHS=arm64 "
-         'OTHER_CFLAGS="-mkernel -nostdinc -Wno-packed -mcpu=cortex-a53 -march=armv8-a+crypto"', 1),
+         'OTHER_CFLAGS="-mkernel -nostdinc -Wno-packed -mcpu=cortex-a53 -march=armv8-a+crypto -I${WORK_DIR}/xnu/EXTERNAL_HEADERS"', 1),
     ]
     for old, new, expected in replacements:
         if source.count(old) != expected:
