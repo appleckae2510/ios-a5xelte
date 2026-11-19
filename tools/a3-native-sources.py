@@ -5,6 +5,14 @@ import sys
 
 
 def prepare(root, board):
+    config = root / "config/MASTER.arm64.a5xelte"
+    text = config.read_text()
+    old = "[ vm_pressure_events memorystatus "
+    if old in text:
+        text = text.replace(old, "[ vm_pressure_events jetsam memorystatus ", 1)
+        config.write_text(text)
+    elif "[ vm_pressure_events jetsam memorystatus " not in text:
+        raise ValueError("unexpected A3 VM configuration")
     # The Apple header generator deliberately preprocesses vm_map_internal for
     # a 32-bit ABI. Give only that MIG preprocessing step a supported min OS.
     path = root / "libsyscall/xcodescripts/mach_install_mig.sh"

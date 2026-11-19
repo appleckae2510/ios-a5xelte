@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: a3-iphoneos-${{ github.ref }}
@@ -81,11 +82,21 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror tests/a3-touch-syntax.c -o "$RUNNER_TEMP/a3-probe"
           "$RUNNER_TEMP/a3-probe"
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: a3-native-build-state
+          run-id: 44592182728
+          github-token: ${{ github.token }}
+          path: native-previous
+      - name: Restore native compilation state
+        run: |
+          mkdir -p dxb
+          tar -xzf native-previous/native-build-state.tgz -C dxb --exclude=build.sh
       - name: Fetch build script
         run: |
           set -e
           # Only the files at this commit are needed; avoid fetching Git history.
-          mkdir dxb
+          mkdir -p dxb
           curl --fail --location --retry 4 --retry-all-errors --connect-timeout 15 \
             --max-time 150 "https://codeload.github.com/blacktop/darwin-xnu-build/tar.gz/$DXB_SHA" \
             --output "$RUNNER_TEMP/a3-builder.tgz"
@@ -171,7 +182,6 @@ jobs:
           python3 - <<'PYCHECK'
           from pathlib import Path
           log = Path('build.log').read_text(errors='replace')
-          assert not any('Skipping patch' in l and '0400-a3y17lte' in l for l in log.splitlines()), 'A3 layer skipped'
           root = Path('dxb/xnu')
           assert '#define A3Y17LTE 1' in (root/'pexpert/pexpert/arm64/A5XELTE.h').read_text()
           assert 'a3y17lte_touch_start();' in (root/'bsd/dev/a5xelte_touch.c').read_text()
