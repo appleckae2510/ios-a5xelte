@@ -29,7 +29,13 @@ def compile_loaders(base, apple, log):
                            for n in unit_names - done)), None)
             if suffix is None:
                 continue
-            old = suffix[:suffix.index("/xnu/bsd/kern/")]
+            # Parallel build output can insert a diagnostic into the last source
+            # path. The BSD include directory records the original build root.
+            roots = {a[2:-len("/xnu/bsd")] for a in argv
+                     if a.startswith("-I/") and a.endswith("/xnu/bsd")}
+            if len(roots) != 1:
+                raise ValueError("compiler invocation has no unique BSD root")
+            old = roots.pop()
             name = Path(suffix).name
             source = base / "xnu/bsd/kern" / name
             shutil.copyfile(apple / "bsd/kern" / name, source)
@@ -39,6 +45,8 @@ def compile_loaders(base, apple, log):
             for a in orig:
                 if a in {"-o", "-MF", "-MT", "-MQ"}:
                     next(orig)
+                elif a == suffix:
+                    args.append(str(source))
                 elif a.startswith("-mmacosx-version-min="):
                     args.append("-miphoneos-version-min=16.7")
                 elif a.startswith("-I/Applications/"):

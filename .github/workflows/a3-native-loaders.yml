@@ -1,0 +1,44 @@
+name: A3 native loader verification
+on:
+  push:
+    branches: [experiment/a3y17lte-loader-check-20261119]
+    paths: ['.github/workflows/a3-native-loaders.yml', 'tools/a3-compile-loader.py']
+permissions:
+  contents: read
+jobs:
+  loaders:
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: apple-oss-distributions/xnu
+          ref: 1b191cb58250d0705d8a51287127505aa4bc0789
+          path: upstream-xnu
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: xnu-buildtree
+          run-id: 44415023180
+          github-token: ${{ github.token }}
+          path: previous-tree
+      - uses: actions/download-artifact@v4
+        with:
+          name: a3-xnu-build-log
+          run-id: 44415023180
+          github-token: ${{ github.token }}
+          path: previous-log
+      - name: Compile pristine Apple exec and Mach-O code for A3
+        run: |
+          set -euo pipefail
+          xc=$(ls -d /Applications/Xcode_16*.app | sort -V | head -1)
+          export DEVELOPER_DIR="$xc/Contents/Developer"
+          dir=$(mktemp -d)
+          tar -xzf previous-tree/buildtree.tgz -C "$dir"
+          python3 tools/a3-compile-loader.py "$dir" upstream-xnu previous-log/build.log
