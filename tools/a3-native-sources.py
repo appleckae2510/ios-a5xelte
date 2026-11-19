@@ -13,6 +13,18 @@ def prepare(root, board):
         config.write_text(text)
     elif "[ vm_pressure_events jetsam memorystatus " not in text:
         raise ValueError("unexpected A3 VM configuration")
+    config = root / "config/MASTER.arm64.a5xelte"
+    text = config.read_text()
+    for variant in ("VM_DEV", "VM_DEBUG"):
+        prefix = "#  " + variant + " ="
+        lines = text.splitlines(keepends=True)
+        for i, line in enumerate(lines):
+            if line.startswith("#  " + variant + " ") and "ubsan_minimal" not in line:
+                lines[i] = line.replace("[ VM_BASE", "[ VM_BASE ubsan_minimal", 1)
+        text = "".join(lines)
+    if "options CONFIG_UBSAN_MINIMAL" not in text:
+        text += "\noptions CONFIG_UBSAN_MINIMAL # <ubsan_minimal>\n"
+    config.write_text(text)
     # The Apple header generator deliberately preprocesses vm_map_internal for
     # a 32-bit ABI. Give only that MIG preprocessing step a supported min OS.
     path = root / "libsyscall/xcodescripts/mach_install_mig.sh"
