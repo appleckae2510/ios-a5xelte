@@ -147,6 +147,24 @@ jobs:
           path: build.log
           if-no-files-found: ignore
 
+      - name: Preserve native build state on failure
+        if: failure()
+        run: |
+          set -euo pipefail
+          if [ -d dxb/xnu ] && [ -d dxb/build ]; then
+            printf '%s\n' "$GITHUB_SHA" > dxb/a3-build-commit.txt
+            (cd dxb && find . -maxdepth 1 -type d ! -name . ! -name venv ! -name .git -print > ../native-dirs.txt)
+            tar -czf native-build-state.tgz --exclude=.git --exclude=venv \
+              -C dxb -T "$PWD/native-dirs.txt" build.sh a3-build-commit.txt
+          fi
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: a3-native-build-state
+          path: native-build-state.tgz
+          if-no-files-found: ignore
+          retention-days: 3
+
       # The builder can skip rejected patches: this board layer is mandatory.
       - name: Verify mandatory A3 source changes
         run: |

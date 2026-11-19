@@ -8,6 +8,8 @@ def select_target(source):
     make_target = "SDKROOT=iphoneos SDKVERSION=16.7 ARCH_STRING_FOR_CURRENT_MACHINE_CONFIG=arm64"
     xcode_target = "-sdk iphoneos SUPPORTED_PLATFORMS=iphoneos IPHONEOS_DEPLOYMENT_TARGET=16.7"
     replacements = [
+        ('if [ ! -d "${KDKROOT}" ]; then',
+         'if [ "$MACHINE_CONFIG" != A5XELTE ] && [ ! -d "${KDKROOT}" ]; then', 3),
         ('    if [ ! -d "$KDKROOT" ]; then',
          '    if [ "$MACHINE_CONFIG" = A5XELTE ]; then\n'
          '        info "A5XELTE uses its open-source machine support; KDK binary libraries are unused"\n'
