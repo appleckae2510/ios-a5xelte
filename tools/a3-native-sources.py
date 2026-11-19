@@ -2,11 +2,14 @@
 
 from pathlib import Path
 import sys
+import shutil
 
 
 def prepare(root, board):
     # Export headers again after changing native feature selection.
     (root.parent / "fakeroot/.xnu_headers_installed").unlink(missing_ok=True)
+    for name in ("xnu.obj", "xnu-hdrs.obj"):
+        shutil.rmtree(root.parent / "build" / name, ignore_errors=True)
     config = root / "config/MASTER.arm64.a5xelte"
     text = config.read_text()
     old = "[ vm_pressure_events memorystatus "
