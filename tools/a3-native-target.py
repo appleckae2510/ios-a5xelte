@@ -17,7 +17,7 @@ def select_target(source):
          '    fi\n'
          '    if [ ! -d "$KDKROOT" ]; then', 1),
         ("    patches\n    venv",
-         '    patches\n    python3 "../tools/a3-native-sources.py" "$WORK_DIR/xnu" '
+         '    if [ ! -f "$WORK_DIR/a3-build-commit.txt" ]; then\n        patches\n    fi\n    python3 "../tools/a3-native-sources.py" "$WORK_DIR/xnu" '
          '"../xnu/a3y17lte-patches/0404-a3y17lte-combined-userland.patch"\n    venv', 1),
         ('make installhdrs SDKROOT=macosx ARCH_CONFIGS="X86_64 ARM64"',
          f"make installhdrs {make_target} ARCH_CONFIGS=ARM64", 1),
