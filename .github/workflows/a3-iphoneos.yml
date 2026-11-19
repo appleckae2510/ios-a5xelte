@@ -1,0 +1,272 @@
+name: A3 native iPhoneOS kernel
+run-name: A320FL native iPhoneOS 16 kernel
+on:
+  push:
+    branches: [experiment/a3y17lte-iphoneos-20261119]
+    paths: ['.github/workflows/a3-iphoneos.yml', 'tools/a3-native-target.py', 'tools/a3-check-kernel-target.py', 'xnu/a3y17lte-patches/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: a3-iphoneos-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DXB_SHA: 663906528d1cd5ea8fde7de6f16de73db9511549
+  MACOS_VERSION: '13.5'  # source tag xnu-8796.141.3
+  KERNEL_CONFIG: DEVELOPMENT
+  MACHINE_CONFIG: A5XELTE
+
+jobs:
+  build:
+    # macos-15 has Xcode 16.x only (macos-14, with 15.x, is retired): see the Xcode step below
+    runs-on: macos-15-intel
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Pinned J7 Prime donor sources
+        uses: actions/checkout@v4
+        with:
+          repository: hoaan1911/ios-on7xelte
+          ref: f11e5d503398d814813899ffe531ad6521521b51
+          path: donor-patchset
+          persist-credentials: false
+
+      - name: Verify A3 profile
+        run: test "$MACHINE_CONFIG" = A5XELTE
+
+      - name: Test A320FL probe with CP registers unavailable
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror tests/a3-touch-syntax.c -o "$RUNNER_TEMP/a3-probe"
+          "$RUNNER_TEMP/a3-probe"
+
+      - name: Fetch build script
+        run: |
+          set -e
+          # Only the files at this commit are needed; avoid fetching Git history.
+          mkdir dxb
+          curl --fail --location --retry 4 --retry-all-errors --connect-timeout 15 \
+            --max-time 150 "https://codeload.github.com/blacktop/darwin-xnu-build/tar.gz/$DXB_SHA" \
+            --output "$RUNNER_TEMP/a3-builder.tgz"
+          tar -xzf "$RUNNER_TEMP/a3-builder.tgz" --strip-components=1 -C dxb
+
+          # Stage the board, display, storage and build support for this native configuration.
+          # The process loader and entitlement policy use the native XNU implementation.
+          python3 - <<'PYBOARD'
+          from pathlib import Path
+          import shutil
+          families = (range(1, 15), range(16, 25), range(26, 29), range(32, 35),
+                      range(45, 50), range(51, 57), range(58, 64), range(65, 70),
+                      range(71, 105), range(108, 129), range(300, 312),
+                      range(314, 354), range(356, 371), range(376, 377))
+          selected = {n for family in families for n in family} | {37, 39, 40, 41}
+          for path in Path('donor-patchset/xnu/patches').iterdir():
+              if path.suffix in {'.patch', '.sh'} and path.name[:4].isdigit():
+                  if int(path.name[:4]) in selected:
+                      shutil.copyfile(path, Path('dxb/patches') / path.name)
+          PYBOARD
+          cp xnu/a3y17lte-patches/*.patch dxb/patches/
+          python3 tools/a3-native-target.py dxb/build.sh
+
+      - name: Deps
+        run: |
+          brew install jq gum bash cmake ninja
+
+          # build.sh checks for xcodes; Xcode is already installed on the runner.
+          printf '#!/bin/sh\nexit 0\n' | sudo tee /usr/local/bin/xcodes >/dev/null
+          sudo chmod +x /usr/local/bin/xcodes
+
+          sw_vers
+          ls -d /Applications/Xcode*.app
+
+          # GitHub's macOS 14 images (the last with Xcode 15.x) were retired on 2026-11-02, so there is no
+          # Xcode 15 on any hosted runner now. Prefer 15.x if one ever shows up; otherwise the OLDEST
+          # Xcode 16.x (never 26.x): it is the closest to the iig this xnu-8796 was written against.
+          # If its iig output does not compile (IORPC.kernelContent), the error annotations say so.
+          XC=$(ls -d /Applications/Xcode_15*.app 2>/dev/null | sort -V | tail -1 || true)
+          if [ -z "$XC" ]; then
+            XC=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | head -1 || true)
+            [ -n "$XC" ] && echo "::warning::no Xcode 15.x on this runner; using $XC"
+          fi
+          if [ -z "$XC" ]; then
+            echo "::error::no Xcode 15.x or 16.x on this runner"
+            exit 1
+          fi
+
+          echo "DEVELOPER_DIR=$XC/Contents/Developer" >> "$GITHUB_ENV"
+          sudo xcode-select -s "$XC"
+          xcodebuild -version
+          xcrun --find iig
+          xcrun --sdk iphoneos --show-sdk-path
+          xcrun --sdk iphoneos --show-sdk-platform-path
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Build
+        working-directory: dxb
+        env:
+          # Keep going after errors so one run reports more compile failures.
+          MAKEFLAGS: '-k'
+        run: |
+          set -o pipefail
+          bash build.sh 2>&1 | tee ../build.log
+
+      - name: Preserve build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a3-native-build-log
+          path: build.log
+          if-no-files-found: ignore
+
+      # The builder can skip rejected patches: this board layer is mandatory.
+      - name: Verify mandatory A3 source changes
+        run: |
+          python3 - <<'PYCHECK'
+          from pathlib import Path
+          log = Path('build.log').read_text(errors='replace')
+          assert not any('Skipping patch' in l and '0400-a3y17lte' in l for l in log.splitlines()), 'A3 layer skipped'
+          root = Path('dxb/xnu')
+          assert '#define A3Y17LTE 1' in (root/'pexpert/pexpert/arm64/A5XELTE.h').read_text()
+          assert 'a3y17lte_touch_start();' in (root/'bsd/dev/a5xelte_touch.c').read_text()
+          assert (root/'bsd/dev/a3_touch.inc').is_file()
+          assert (root/'bsd/dev/a3_hardware.inc').read_bytes() == Path('xnu/a3y17lte/a3_hardware.inc').read_bytes()
+          assert (root/'bsd/dev/a3_boot_volume.inc').read_bytes() == Path('xnu/a3y17lte/a3_boot_volume.inc').read_bytes()
+          assert 'a3_ios_boot_candidate()' in (root/'iokit/bsddev/IOKitBSDInit.cpp').read_text()
+          assert 'a3y17lte_hardware_probe();' in (root/'bsd/dev/a5xelte_touch.c').read_text()
+          assert 'A3 writes require the selected USERDATA root' in (root/'bsd/dev/a5xelte_emmc.c').read_text()
+          print('A3 geometry, touch source and write protection present')
+          PYCHECK
+
+      # Publish build errors as check-run annotations for easier diagnosis.
+      - name: Report build errors as annotations
+        if: always()
+        run: |
+          test -f build.log || exit 0
+
+          kernel="dxb/fakeroot/System/Library/Kernels/kernel.$(echo "$KERNEL_CONFIG" | tr A-Z a-z).$(echo "$MACHINE_CONFIG" | tr A-Z a-z)"
+          if [ -f "$kernel" ]; then
+            echo "kernel built: $kernel"
+            exit 0
+          fi
+
+          python3 - build.log <<'PY'
+          import re
+          import sys
+
+          lines = open(sys.argv[1], errors="replace").read().splitlines()
+          clean = [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in lines]
+
+          pat = re.compile(
+              r"(error:|fatal error|Error \d|\*\*\* |FAILED|Skipping patch|"
+              r"No such file|panic|❌)",
+              re.I,
+          )
+          cc = re.compile(
+              r"(:\d+:\d+: (fatal )?error:|^ld: |Undefined symbols|clang: error)"
+          )
+
+          hits = [line for line in clean if cc.search(line)]
+          hits += [
+              line for line in clean
+              if pat.search(line)
+              and line not in hits
+              and "Skipping patch" not in line
+              and "already exists in working directory" not in line
+              and "patch does not apply" not in line
+          ]
+
+          esc = lambda s: s.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+
+          for line in hits[:9]:
+              print("::error title=build::" + esc(line[:900]))
+
+          tail = "\n".join(line[:300] for line in clean[-60:])
+          print("::error title=build log tail::" + esc(tail[-30000:]))
+          PY
+          exit 1
+
+      - name: Collect
+        if: always()
+        run: |
+          mkdir -p out
+
+          if [ -d dxb/fakeroot/System/Library/Kernels ]; then
+            cp -R dxb/fakeroot/System/Library/Kernels/. out/ 2>/dev/null || true
+          fi
+
+          ls -la out
+          (cd out && shasum -a 256 kernel.* > SHA256SUMS) || true
+
+      - name: Check Cortex-A53 compatibility (no ARMv8.1 LSE atomics)
+        if: env.MACHINE_CONFIG == 'A5XELTE' || env.MACHINE_CONFIG == 'HEROLTE'
+        run: |
+          kernel="out/kernel.$(echo "$KERNEL_CONFIG" | tr A-Z a-z).$(echo "$MACHINE_CONFIG" | tr A-Z a-z)"
+          test -f "$kernel"
+          python3 tools/a3-check-kernel-target.py "$kernel" build.log
+
+          xcrun llvm-objdump -d --no-show-raw-insn "$kernel" > lse-scan.txt || {
+            echo "::error title=LSE check::llvm-objdump failed on $kernel"
+            exit 1
+          }
+
+          # Ignore K256, a constant table that can disassemble as LSE instructions.
+          python3 - lse-scan.txt "$kernel" <<'PY'
+          import re
+          import sys
+
+          lse = re.compile(
+              r"\s(cas|casp|ldadd|ldclr|ldeor|ldset|ldsmax|ldsmin|"
+              r"ldumax|ldumin|stadd|stclr|steor|stset|stsmax|stsmin|"
+              r"stumax|stumin|swp)[a-z]*\s"
+          )
+
+          data_symbols = {"K256"}
+          func, funcs, samples = "?", {}, []
+
+          for line in open(sys.argv[1], errors="replace"):
+              match = re.match(r"^[0-9a-f]+ <(.+)>:", line)
+              if match:
+                  func = match.group(1)
+              elif lse.search(line) and func not in data_symbols:
+                  funcs[func] = funcs.get(func, 0) + 1
+                  if len(samples) < 8:
+                      samples.append(func + ": " + line.strip())
+
+          count = sum(funcs.values())
+          print(f"LSE instructions in code of {sys.argv[2]}: {count}")
+
+          if count:
+              top = sorted(funcs.items(), key=lambda item: -item[1])[:40]
+              msg = f"{count} LSE instructions in {len(funcs)} functions\n"
+              msg += "\n".join(f"{n} {f}" for f, n in top)
+              msg += "\n--\n" + "\n".join(samples)
+              print(
+                  "::error title=LSE in kernel::"
+                  + msg.replace("%", "%25").replace("\n", "%0A")
+              )
+              sys.exit(1)
+          PY
+
+      - name: Verify A3 kernel marker
+        run: |
+          python3 - <<'PYMARKER'
+          import os
+          from pathlib import Path
+          p = Path('out') / ('kernel.' + os.environ['KERNEL_CONFIG'].lower() + '.a5xelte')
+          assert b'A3Y17LTE_PORT_V1_720X1280_IST3038H' in p.read_bytes(), 'A3 marker missing'
+          assert b'A3Y17LTE_HARDWARE_V2' in p.read_bytes(), 'A3 hardware probe fix missing'
+          assert b'A3Y17LTE_USERDATA_RW_V1' in p.read_bytes(), 'A3 USERDATA bounds missing'
+          assert b'A3 COMBINED: RAM root' in p.read_bytes(), 'A3 combined boot missing'
+          print('A3 entry kernel marker present; physical boot still untested')
+          PYMARKER
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: a3-native-kernel
+          path: out/kernel.*.a5xelte
+          if-no-files-found: error
