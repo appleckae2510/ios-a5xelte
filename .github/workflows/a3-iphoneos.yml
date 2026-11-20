@@ -3,7 +3,7 @@ run-name: A320FL native iPhoneOS 16 kernel
 on:
   push:
     branches: [experiment/a3y17lte-iphoneos-20261119]
-    paths: ['.github/workflows/a3-iphoneos.yml', 'tools/a3-native-target.py', 'tools/a3-check-kernel-target.py', 'tools/a3-native-sources.py', 'tools/a3-compile-loader.py', 'xnu/a3y17lte-patches/**']
+    paths: ['.github/workflows/a3-iphoneos.yml', 'tools/a3-native-target.py', 'tools/a3-check-kernel-target.py', 'tools/a3-boot-regression.py', 'tools/a3-native-sources.py', 'tools/a3-compile-loader.py', 'xnu/a3y17lte-patches/**']
   workflow_dispatch:
 
 permissions:
@@ -316,6 +316,9 @@ jobs:
           print('A3 entry kernel marker present; physical boot still untested')
           PYMARKER
 
+      - name: Verify linked startup path and sealed policy placement
+        run: python3 tools/a3-boot-regression.py --static-only out/kernel.development.a5xelte
+
       - uses: actions/upload-artifact@v4
         with:
           name: a3-native-kernel
@@ -329,3 +332,22 @@ jobs:
           name: a3-unverified-kernel
           path: out/kernel.development.a5xelte
           retention-days: 3
+
+  boot-regression:
+    name: Native Cortex-A53 MAC and BSD startup
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: a3-native-kernel
+          path: kernel
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --only-binary=:all: 'unicorn==2.1.4'
+      - run: python tools/a3-boot-regression.py kernel/kernel.development.a5xelte

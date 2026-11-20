@@ -1,0 +1,51 @@
+--- a/security/mac_base.c
++++ b/security/mac_base.c
+@@ -95,6 +95,7 @@
+ 
+ #include <kern/kalloc.h>
+ #include <kern/sched_prim.h>
++#include <kern/startup.h>
+ #include <kern/task.h>
+ 
+ #if CONFIG_MACF
+@@ -613,6 +614,13 @@
+ 	int error, slot, static_entry = 0;
+ 	u_int i;
+ 
++#if defined(ARM64_BOARD_CONFIG_A5XELTE) && XNU_TARGET_OS_IOS
++	/* Native iOS seals the policy table and its entries at lockdown. */
++	if (startup_phase >= STARTUP_SUB_LOCKDOWN) {
++		return EPERM;
++	}
++#endif
++
+ 	/*
+ 	 * Some preliminary checks to make sure the policy's conf structure
+ 	 * contains the required fields.
+@@ -778,6 +786,12 @@
+ mac_policy_unregister(mac_policy_handle_t handle)
+ {
+ 	struct mac_policy_conf *mpc;
++
++#if defined(ARM64_BOARD_CONFIG_A5XELTE) && XNU_TARGET_OS_IOS
++	if (startup_phase >= STARTUP_SUB_LOCKDOWN) {
++		return EBUSY;
++	}
++#endif
+ 
+ 	/*
+ 	 * If we fail the load, we may get a request to unload.  Check
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -700,7 +700,10 @@
+ 	bsd_init_kprintf("calling vfsinit\n");
+ 	vfsinit();
+ 
+-#if defined(ARM64_BOARD_CONFIG_SWEET) || defined(ARM64_BOARD_CONFIG_A5XELTE)
++#if defined(ARM64_BOARD_CONFIG_A5XELTE) && XNU_TARGET_OS_IOS
++	/* BSD runs after machine_lockdown(). Use the policies installed by Mach. */
++	printf("A3 BSD v0.9.1: MAC table sealed, starting filesystems\n");
++#elif defined(ARM64_BOARD_CONFIG_SWEET) || defined(ARM64_BOARD_CONFIG_A5XELTE)
+ 	/* AMFI's MAC policy is built in (bsd/kern/sweet_amfi.c). */
+ 	extern void sweet_amfi_policy_register(void);
+ 	sweet_amfi_policy_register();
