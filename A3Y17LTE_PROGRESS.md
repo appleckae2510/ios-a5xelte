@@ -378,3 +378,57 @@ The Windows package entry START-GESAMTTEST.cmd uses the packer's JSON,
 verifies the local image and TWRP staging, and checks the BOOT prefix
 after the operator flashes Boot. Thirteen modeled TWRP transfer/check cases
 ran against the released bytes.
+
+## Native iPhoneOS BOOT v0.9, 2026-11-20
+
+The user's last photo reached the mounted A3IOSROOT volume and then reported
+launchd SIGKILL with namespace 9 code 0xe. In xnu-8796.141.3 these values
+identify OS_REASON_EXEC and EXEC_EXIT_REASON_WRONG_PLATFORM. The previous
+A3 kernel was compiled with XNU_TARGET_OS_OSX and Mach-O platform 1.
+The kernel is now built with XNU_TARGET_OS_IOS, iPhoneOS SDK, ARM64_ALL,
+Cortex-A53, and deployment target 16.7. Its Mach-O target is platform 2.
+
+The complete build succeeded in run 44615970616, job 135884629518, source
+2abdc33f805944bca26a063867e2f41407a9de6e. The native build required Jetsam
+and the minimal UBSan runtime in the A5XELTE configuration. The final
+workflow collects fakeroot/mach.development.a5xelte and compares it with
+the freshly linked object. Native platform, compiler flags, A3 markers
+and the Cortex-A53 no-LSE checks passed.
+
+Kernel artifact 14574933930 contains 17516824 bytes, SHA-256
+7fdf1b7b280016628539434aebf2ac44b7751b031107eb3350f7c55c8d5a207c.
+The artifact ZIP digest is
+688ea767327eabf8c879277458eef47386182255040ea94de02383dafd1cb74a.
+The corresponding build log is artifact 14576365730.
+
+The package Galaxy-A3-A320FL-iOS16-BOOT-v0.9-Windows.zip contains the
+27117584-byte A3-A320FL-iOS16-BOOT-v0.9.img, the profile, Windows staging
+and BOOT verification commands, checksums, and a German tutorial.
+BOOT SHA-256 is
+e9d967df8187690753dcb69a4ef4235337abb485d916224b25641be25b61474a.
+ZIP size is 7780744 bytes, SHA-256
+8f9db810538554107e63d64f3765f7f8459f2326b08eb979eb04072645aaa483.
+
+The packer verified every loaded segment against this exact native kernel,
+the device BOOT layout, DTBH, Samsung ramdisk, payload and embedded ADT.
+EL1 and EL2 A53 loader replays reached the linked kernel entry marker.
+Nine combined root-selection scenarios ran from the new packed bytes.
+The iOS catalog selected emmcroot0 after 708 sector reads. Error and
+fallback cases selected md0. All scenarios issued zero media writes.
+The replay now enters IOFindBSDRoot at its actual function entry, so its
+own instructions establish the stack and callee-saved registers.
+
+Fourteen Windows/TWRP fixture cases passed with these released bytes.
+The checker pins the v0.9 image hash and size in addition to validating
+the JSON profile. A mixed package with an older image and matching older
+profile is rejected. Transfer retries, partial writes to staging, and
+post-flash BOOT readback were exercised using modeled TWRP services.
+
+Physical boot of v0.9 remains untested. The emulator did not execute
+Apple launchd, dyld, or SpringBoard. The available board probes do not
+establish working camera, Wi-Fi, Bluetooth, audio, modem or touch.
+The next hardware step is this BOOT-only update over the existing
+A3IOSROOT installation, followed by the first panic or console photo.
+The combined profile uses rd=a3auto and emmcwrite=0. Services requiring
+writable storage may stop later. No new USERDATA installation is needed
+for this kernel platform change.
