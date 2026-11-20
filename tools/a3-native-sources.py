@@ -10,13 +10,14 @@ import sys
 def prepare(root, board):
     # Resume snapshots already contain the donor series. Apply the native-only
     # change here for both fresh and restored source trees.
-    patch = (board.parent / "native/0405-static-mac-lifetime.patch").resolve()
     cmd = ["git", "apply", "--whitespace=nowarn"]
     env = {**os.environ, "GIT_CEILING_DIRECTORIES": str(root.parent)}
-    applied = subprocess.run(cmd + ["--reverse", "--check", str(patch)], cwd=root,
-                             env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    if applied.returncode:
-        subprocess.run(cmd + [str(patch)], cwd=root, env=env, check=True)
+    for name in ("0405-static-mac-lifetime.patch", "0406-verified-boot-cache-measurement.patch"):
+        patch = (board.parent / "native" / name).resolve()
+        applied = subprocess.run(cmd + ["--reverse", "--check", str(patch)], cwd=root,
+                                 env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if applied.returncode:
+            subprocess.run(cmd + [str(patch)], cwd=root, env=env, check=True)
     # Export headers again after changing native feature selection.
     (root.parent / "fakeroot/.xnu_headers_installed").unlink(missing_ok=True)
     for name in ("xnu.obj", "xnu-hdrs.obj"):

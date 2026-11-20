@@ -3,7 +3,7 @@ run-name: A320FL native iPhoneOS 16 kernel
 on:
   push:
     branches: [experiment/a3y17lte-iphoneos-20261119]
-    paths: ['.github/workflows/a3-iphoneos.yml', 'tools/a3-native-target.py', 'tools/a3-check-kernel-target.py', 'tools/a3-boot-regression.py', 'tools/a3_boot_filesystems.py', 'tools/a3-boot-trust-test.py', 'tools/a3y17lte-pack-boot.py', 'tools/mkpayload.py', 'tests/a3-20h392-startup.json', 'tools/a3-native-sources.py', 'tools/a3-compile-loader.py', 'xnu/a3y17lte-patches/**']
+    paths: ['.github/workflows/a3-iphoneos.yml', 'tools/a3-native-target.py', 'tools/a3-check-kernel-target.py', 'tools/a3-boot-regression.py', 'tools/a3_boot_filesystems.py', 'tools/a3-boot-trust-test.py', 'tools/a3y17lte-pack-boot.py', 'tools/mkadt_a3y17lte.py', 'tools/mkadt_j7prime.py', 'tools/mkpayload.py', 'tests/a3-20h392-startup.json', 'tools/a3-native-sources.py', 'tools/a3-compile-loader.py', 'xnu/a3y17lte-patches/**']
   workflow_dispatch:
 
 permissions:

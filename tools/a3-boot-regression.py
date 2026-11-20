@@ -125,15 +125,16 @@ def policy_lifecycle(kernel, trust_fixture=None):
         address = at(name)
         cpu.hook_add(UC_HOOK_CODE, external_return, begin=address, end=address)
 
-    def call(name, *arguments):
+    def call(name, *arguments, wide=False):
         for register, value in zip((UC_ARM64_REG_X0, UC_ARM64_REG_X1, UC_ARM64_REG_X2, UC_ARM64_REG_X3), arguments):
             cpu.reg_write(register, value)
         cpu.reg_write(UC_ARM64_REG_SP, temp + 0x10000)
         cpu.reg_write(UC_ARM64_REG_LR, stop)
-        cpu.emu_start(at(name), stop, count=200000)
+        limit = 24000000 if name in ("_load_static_trust_cache", "_a3_measure_boot_cache") else 200000
+        cpu.emu_start(at(name), stop, count=limit)
         if cpu.reg_read(UC_ARM64_REG_PC) != stop:
             raise ValueError(f"{name} failed to return")
-        return cpu.reg_read(UC_ARM64_REG_X0) & 0xffffffff
+        return cpu.reg_read(UC_ARM64_REG_X0) & (0xffffffffffffffff if wide else 0xffffffff)
 
     table, entries = at("_mac_policy_list"), at("_mac_policy_static_entries")
     call("_mac_policy_init")
@@ -164,7 +165,7 @@ def policy_lifecycle(kernel, trust_fixture=None):
     if struct.unpack("<I", cpu.mem_read(handle + 4, 4))[0] != 1 or struct.unpack("<I", cpu.mem_read(table, 4))[0] != 2:
         raise ValueError("second early policy did not receive a distinct active slot")
     if trust_fixture is not None:
-        trust_fixture.install_boot_inputs(cpu, call)
+        trust_fixture.install_boot_inputs(kernel, cpu, call)
         call("_trust_cache_runtime_init")
         call("_load_static_trust_cache")
     # Model XNU's normal transition into STARTUP_SUB_LOCKDOWN and its final mappings.

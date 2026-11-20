@@ -1,0 +1,199 @@
+--- a/bsd/kern/kern_trustcache.c
++++ b/bsd/kern/kern_trustcache.c
+@@ -796,6 +796,10 @@
+ 
+ #endif /* defined(__arm__) || defined(__arm64__) */
+ 
++#if defined(__arm64__) && defined(ARM64_BOARD_CONFIG_A5XELTE) && XNU_TARGET_OS_IOS
++#include "a3_boot_cache.inc"
++#endif
++
+ void
+ load_static_trust_cache(void)
+ {
+@@ -804,6 +808,10 @@
+ 	trust_cache_offsets_t *tc_offsets = NULL;
+ 	unsigned int tc_dt_prop_length = 0;
+ 	size_t tc_segment_length = 0;
++
++#if defined(__arm64__) && defined(ARM64_BOARD_CONFIG_A5XELTE) && XNU_TARGET_OS_IOS
++	a3_measure_boot_cache();
++#endif
+ 
+ 	/* Mark this function as having been called */
+ 	trust_cache_static_init = true;
+--- a/bsd/kern/ubc_subr.c
++++ b/bsd/kern/ubc_subr.c
+@@ -43,6 +43,9 @@
+ #include <sys/mman.h>
+ #include <sys/mount_internal.h>
+ #include <sys/vnode_internal.h>
++#if defined(__arm64__) && defined(ARM64_BOARD_CONFIG_A5XELTE) && XNU_TARGET_OS_IOS
++#include "a3_boot_cache.h"
++#endif
+ #include <sys/ubc_internal.h>
+ #include <sys/ucred.h>
+ #include <sys/proc_internal.h>
+@@ -4734,6 +4737,10 @@
+ 		tmp_blob.csb_platform_path = 0;
+ 	}
+ 
++#if defined(__arm64__) && defined(ARM64_BOARD_CONFIG_A5XELTE) && XNU_TARGET_OS_IOS
++	a3_note_boot_identity(vp, tmp_blob.csb_cdhash, tmp_blob.csb_platform_binary);
++#endif
++
+ 	if ((flags & MAC_VNODE_CHECK_DYLD_SIM) && !tmp_blob.csb_platform_binary) {
+ 		printf("dyld simulator runtime is not apple signed: proc: %d\n",
+ 		    proc_getpid(current_proc()));
+--- /dev/null
++++ b/bsd/kern/a3_boot_cache.h
+@@ -0,0 +1,5 @@
++#ifndef A3_BOOT_CACHE_H
++#define A3_BOOT_CACHE_H
++struct vnode;
++void a3_note_boot_identity(struct vnode *vp, const uint8_t *cdhash, int platform_binary);
++#endif
+--- /dev/null
++++ b/bsd/kern/a3_boot_cache.inc
+@@ -0,0 +1,141 @@
++/*
++ * SM-A320FL boot diagnostics for the original d21ap 20H392 static cache.
++ * This measurement never supplies a signer type, entitlements, platform
++ * flags, MAC return value or a global trust-cache query token.
++ */
++#include <kern/startup.h>
++#include <libkern/crypto/sha2.h>
++#include <pexpert/boot.h>
++#include <sys/vnode.h>
++#include <TrustCache/RawTypes.h>
++#include "a3_boot_cache.h"
++
++enum { A3_RELEASE_ENTRIES = 2754 };
++struct a3_cache_module {
++	uint32_t version;
++	uint8_t uuid[16];
++	uint32_t count;
++	TrustCacheEntry2_t entries[A3_RELEASE_ENTRIES];
++};
++struct a3_cache_table {
++	uint32_t count;
++	uint32_t offset;
++	struct a3_cache_module module;
++};
++_Static_assert(sizeof(struct a3_cache_table) == 66128, "20H392 cache layout");
++SECURITY_READ_ONLY_LATE(static struct a3_cache_module) a3_measured_module;
++SECURITY_READ_ONLY_LATE(static bool) a3_measured_ready;
++
++/* SHA-384 of the IM4P data verified against the d21ap Erase BuildManifest. */
++static const unsigned char a3_module_digest[48] = {
++	0x8b, 0xc9, 0x4b, 0x79, 0xaa, 0x3e, 0x58, 0x07, 0x90, 0x46, 0x71, 0x5d,
++	0xdc, 0xba, 0xd2, 0x81, 0x2b, 0x2f, 0x0f, 0x9b, 0xae, 0xb6, 0xbe, 0xc1,
++	0x29, 0xaa, 0x38, 0xa0, 0x61, 0x49, 0x81, 0x61, 0xd4, 0xa0, 0xf5, 0x2e,
++	0x3c, 0x1c, 0x75, 0x55, 0x9a, 0xbf, 0xa9, 0x7e, 0xbc, 0x14, 0xb3, 0x35,
++};
++
++static __attribute__((noinline)) void
++a3_measure_boot_cache(void)
++{
++	const boot_args *args = PE_state.bootArgs;
++	DTEntry root = NULL, map = NULL;
++	static const char marker[] = "A3Y17LTE_PORT_V1_720X1280_IST3038H";
++	const void *property = NULL;
++	unsigned int size = 0;
++	DTTrustCacheRange range;
++	uint64_t dt_pa, dt_off;
++	SHA384_CTX ctx;
++	uint8_t digest[48];
++
++	if (args == NULL || a3_measured_ready || startup_phase >= STARTUP_SUB_LOCKDOWN ||
++	    SecureDTLookupEntry(NULL, "/", &root) != kSuccess ||
++	    SecureDTGetProperty(root, "a3-port-marker", &property, &size) != kSuccess ||
++	    size != sizeof(marker) || memcmp(property, marker, sizeof(marker)) != 0 ||
++	    SecureDTLookupEntry(NULL, "chosen/memory-map", &map) != kSuccess ||
++	    SecureDTGetProperty(map, "TrustCache", &property, &size) != kSuccess ||
++	    size != sizeof(range)) {
++		return;
++	}
++	memcpy(&range, property, sizeof(range));
++	/* Our packer reserves the cache segment immediately before the ADT.
++	 * Compare with the shim-owned boot_args before reading any cache bytes. */
++	if ((uintptr_t)args->deviceTreeP < args->virtBase ||
++	    args->topOfKernelData <= args->physBase ||
++	    args->topOfKernelData - args->physBase > args->memSize) {
++		return;
++	}
++	dt_off = (uintptr_t)args->deviceTreeP - args->virtBase;
++	if (dt_off >= args->topOfKernelData - args->physBase) {
++		return;
++	}
++	dt_pa = args->physBase + dt_off;
++	if (range.length != sizeof(struct a3_cache_table) ||
++	    range.paddr < args->physBase || (range.paddr & 0xfff) != 0 ||
++	    range.paddr >= dt_pa || dt_pa - range.paddr < range.length ||
++	    dt_pa - range.paddr - range.length >= 16384 ||
++	    args->deviceTreeLength > args->topOfKernelData - dt_pa) {
++		return;
++	}
++
++	const struct a3_cache_table *src = (const void *)phystokv(range.paddr);
++	if (phystokv(range.paddr + range.length - 1) - (uintptr_t)src != range.length - 1 ||
++	    src->count != 1 || src->offset != offsetof(struct a3_cache_table, module)) {
++		return;
++	}
++	/* Hash the privately held copy, never follow pointers into the loader
++	 * buffer after the measurement. XNU protects this section at lockdown. */
++	memcpy(&a3_measured_module, &src->module, sizeof(a3_measured_module));
++	SHA384_Init(&ctx);
++	SHA384_Update(&ctx, &a3_measured_module, sizeof(a3_measured_module));
++	SHA384_Final(digest, &ctx);
++	if (memcmp(digest, a3_module_digest, sizeof(digest)) != 0 ||
++	    a3_measured_module.version != 2 || a3_measured_module.count != A3_RELEASE_ENTRIES) {
++		bzero(&a3_measured_module, sizeof(a3_measured_module));
++		printf("A3 stock cache: release fingerprint mismatch\n");
++		return;
++	}
++	a3_measured_ready = true;
++	printf("A3 stock cache: verified 20H392, %u identities\n", a3_measured_module.count);
++}
++
++static __attribute__((noinline)) const TrustCacheEntry2_t *
++a3_measured_identity(const uint8_t *cdhash)
++{
++	unsigned int low = 0, high = A3_RELEASE_ENTRIES;
++	if (!a3_measured_ready || cdhash == NULL) {
++		return NULL;
++	}
++	while (low < high) {
++		unsigned int mid = low + (high - low) / 2;
++		const TrustCacheEntry2_t *entry = &a3_measured_module.entries[mid];
++		int cmp = memcmp(cdhash, entry->CDHash, sizeof(entry->CDHash));
++		if (cmp == 0) {
++			return entry;
++		}
++		if (cmp < 0) {
++			high = mid;
++		} else {
++			low = mid + 1;
++		}
++	}
++	return NULL;
++}
++
++/* Called after MAC has supplied its actual result. Names select log output only. */
++void
++a3_note_boot_identity(vnode_t vp, const uint8_t *cdhash, int platform_binary)
++{
++	if (!a3_measured_ready) {
++		return;
++	}
++	const char *name = vnode_getname(vp);
++	if (name == NULL) {
++		return;
++	}
++	if (strcmp(name, "fsck") == 0 || strcmp(name, "launchd") == 0 || strcmp(name, "mount") == 0) {
++		const TrustCacheEntry2_t *entry = a3_measured_identity(cdhash);
++		printf("A3 stock identity %s: match=%d category=%d platform=%d\n", name,
++		    entry != NULL, entry != NULL ? entry->constraintCategory : -1, platform_binary);
++	}
++	vnode_putname(name);
++}

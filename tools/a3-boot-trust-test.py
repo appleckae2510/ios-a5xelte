@@ -94,16 +94,38 @@ class TrustFixture:
         self.absent = hashlib.sha256(b"A3 20H392 negative control").digest()[:20]
         if self.absent.hex() in values:
             raise ValueError("negative control occurs in stock cache")
-        self.area = 0x52000000
-        self.buffer = self.area + ((adtlen + 4095) // 4096) * 4096
+        self.virt, self.phys, self.mem = virt, phys, memory
+        self.table_va = virt + self.physical - phys
+        self.area = kernel_end
+        self.boot_args = kernel_end + ((adtlen + 4095) // 4096) * 4096
+        self.buffer = 0x52000000
         print(f"PASS: {entries} original static entries, {len(self.files)} release identities and their constraints in the payload")
 
-    def install_boot_inputs(self, cpu, call):
-        cpu.mem_map(self.area, self.buffer - self.area + 4096)
+    def install_boot_inputs(self, kernel, cpu, call):
+        # The boot_args offsets are shared with the A3 loader. Set the native
+        # physical map to the same linear boot mapping, then use XNU phystokv.
+        cpu.mem_map(self.area, self.boot_args - self.area + 4096)
         cpu.mem_write(self.area, self.tree)
-        cpu.mem_protect(self.area, self.buffer - self.area, 1)
-        cpu.mem_map(self.physical, ((len(self.table) + 4095) // 4096) * 4096, 1)
-        cpu.mem_write(self.physical, self.table)
+        cpu.mem_protect(self.area, self.boot_args - self.area, 1)
+        cpu.mem_map(self.buffer, 4096)
+        mapped = (len(self.table) + 4095) // 4096 * 4096
+        cpu.mem_map(self.table_va, mapped, 1)
+        cpu.mem_write(self.table_va, self.table)
+        top = self.phys + self.boot_args - self.virt + 4096
+        args = bytearray(108)
+        struct.pack_into("<HH4x4Q", args, 0, 2, 2, self.virt, self.phys, self.mem, top)
+        struct.pack_into("<QI", args, 96, self.area, len(self.tree))
+        cpu.mem_write(self.boot_args, bytes(args))
+        for name, val in (("_gVirtBase", self.virt), ("_gPhysBase", self.phys),
+                          ("_real_phys_size", self.mem)):
+            cpu.mem_write(kernel.symbols[name], struct.pack("<Q", val))
+        # LP64 PE_state.bootArgs follows initialized (8 incl. padding),
+        # PE_Video (144) and deviceTreeHead (8).
+        cpu.mem_write(kernel.symbols["_PE_state"] + 160, struct.pack("<Q", self.boot_args))
+        for name in ("_a3_measured_module", "_a3_measured_ready"):
+            seg = kernel.segment(kernel.symbols[name])
+            if seg[0] != "__DATA_CONST" or seg[-1] != 1:
+                raise ValueError("the measured identity table must be protected at lockdown")
         call("_SecureDTInit", self.area, len(self.tree))
         out = self.buffer
         path = b"chosen/memory-map\0"
@@ -117,9 +139,21 @@ class TrustFixture:
         if size != 16 or not self.area <= pointer <= self.area + len(self.tree) - size:
             raise ValueError("XNU returned an invalid property view")
         pa, length = struct.unpack("<QQ", cpu.mem_read(pointer, size))
-        if (pa, length) != (self.physical, len(self.table)) or cpu.mem_read(pa, length) != self.table:
+        if (pa, length) != (self.physical, len(self.table)) or cpu.mem_read(call("_phystokv", pa, wide=True), length) != self.table:
             raise ValueError("XNU device-tree view differs from the shipped module")
         print("PASS: linked XNU SecureDT read the complete cache range reserved by the loader")
+        first = bytes.fromhex(self.files[0]["cdhash"])
+        cpu.mem_write(out + 96, first)
+        # Change only a constraint byte in the copy delivered by the loader.
+        # The real kernel must hash the entire module, including this field.
+        changed_pos = 8 + 24 + 22
+        original = self.table[changed_pos]
+        cpu.mem_write(self.table_va + changed_pos, bytes([original ^ 1]))
+        call("_a3_measure_boot_cache")
+        if call("_a3_measured_identity", out+96, wide=True):
+            raise ValueError("a modified static cache produced an identity")
+        cpu.mem_write(self.table_va + changed_pos, bytes([original]))
+        print("PASS: native measurement rejects a modified launch constraint")
 
     def query_boot_files(self, cpu, call):
         buf = self.buffer
@@ -127,12 +161,22 @@ class TrustFixture:
         rc = call("_static_trust_cache_capabilities", buf, buf+8, buf+16)
         num = int.from_bytes(cpu.mem_read(buf, 4), "little")
         print(f"Native static trust cache capabilities: status={rc}, count={num}")
+        # Once measured, the immutable kernel copy must survive a change
+        # to the loader's backing memory. Access and policy results are separate.
+        cpu.mem_write(self.table_va, bytes(len(self.table)))
         for f in self.files:
-            cpu.mem_write(buf+96, bytes.fromhex(f["cdhash"]))
+            raw = bytes.fromhex(f["cdhash"])
+            cpu.mem_write(buf+96, raw)
+            match = call("_a3_measured_identity", buf+96, wide=True)
+            if not match or cpu.mem_read(match, 24) != raw + bytes((2, 0, f["category"], 0)):
+                raise ValueError(f"native measurement disagrees with the release for {f['path']}")
             result = call("_query_trust_cache", 1, buf+96, 0)
             self.results[f["path"]] = result
-            print(f"  {f['path']}: {result}")
+            print(f"  {f['path']}: measured category={f['category']}, system lookup={result}")
+        print(f"PASS: native kernel matched {len(self.files)} original identities and constraints after lockdown")
         cpu.mem_write(buf+96, self.absent)
+        if call("_a3_measured_identity", buf+96, wide=True) or call("_a3_measured_identity", 0, wide=True):
+            raise ValueError("negative input incorrectly matched a release entry")
         if call("_query_trust_cache", 1, buf+96, 0) != 56:
             raise ValueError("unknown CDHash was not rejected as KERN_NOT_FOUND")
         if call("_query_trust_cache", 1, 0, 0) != 4:
