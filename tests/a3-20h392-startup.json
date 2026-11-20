@@ -1,0 +1,78 @@
+{
+  "build": "20H392",
+  "version": "16.7.16",
+  "source_cache_sha384": "9318c3d22caf985f70ca35e9df4bf0b1c023bb108ba165179fc66adc644fde0018bdf4fa3c20fb85999ac72d60d483a6",
+  "count": 2754,
+  "files": [
+    {
+      "path": "/sbin/fsck",
+      "cdhash": "e1a3f12fb8be72d6e9a4e4178ebe152513bc599a",
+      "sha256": "1aaf55052561aaf1214cd7d65924c46d39b1ef325e37c1faeaa76769612e59ce",
+      "category": 3,
+      "codesign_strict_ok": true
+    },
+    {
+      "path": "/sbin/launchd",
+      "cdhash": "b65c36c9f5b287a6a8f5ca83d9427fb55ef04f4e",
+      "sha256": "12370e5ee35bf28ae479b6c4b4455f4f4693ab803e37c5eb3032537c18cac61c",
+      "category": 2,
+      "codesign_strict_ok": true
+    },
+    {
+      "path": "/usr/lib/dyld",
+      "cdhash": "684d847c40e6e873eeaec693011d4d997a869d2a",
+      "sha256": "5806834564fe6462ae981d0915d612b1eb2f6f168822b5d278bee56254933757",
+      "category": 2,
+      "codesign_strict_ok": true
+    },
+    {
+      "path": "/sbin/mount",
+      "cdhash": "b6a7272461fce359ceb407594e7aaf4fdf4949f1",
+      "sha256": "ac55c4c7d200d0153cc266b39d69d4d771a9707ac91eefec94f83eb2522364df",
+      "category": 3,
+      "codesign_strict_ok": true
+    },
+    {
+      "path": "/sbin/fsck_hfs",
+      "cdhash": "06e33786d320450bbd0e2d41ccc51283703be329",
+      "sha256": "b90942e888721084631192039e9fb6cb79c0f464055316efba0e9e512b6520cc",
+      "category": 2,
+      "codesign_strict_ok": true
+    },
+    {
+      "path": "/sbin/fsck_apfs",
+      "cdhash": "88c31dc950f549530512aaebf713853ceaee9550",
+      "sha256": "69d94617b485a389ee4fcc5f3a24cbfd9914eeaa1a4abe243837ccfaf2a4f504",
+      "category": 2,
+      "codesign_strict_ok": true
+    },
+    {
+      "path": "/sbin/mount_hfs",
+      "cdhash": "22045e6149fb96592528bf15ccd0455835eee4e6",
+      "sha256": "a031b91c661de06f11c4c22d94e28dcb43a0c41366225bfa470f1bab11d391e5",
+      "category": 2,
+      "codesign_strict_ok": true
+    },
+    {
+      "path": "/sbin/mount_apfs",
+      "cdhash": "6959e2cbb398d3a8fa248f1ef29cb9b9a70272c3",
+      "sha256": "ccac6fa5b10c74ac9458212044bdc4115831c7a01be04d61d04e86bdec52dc27",
+      "category": 2,
+      "codesign_strict_ok": true
+    },
+    {
+      "path": "/usr/libexec/xpcproxy",
+      "cdhash": "f7f090b0a9b94dc944026136fc6154372763c846",
+      "sha256": "a97bc59d024c3b7fcf293aa6ef2fa75b60ef7220b2546ab4382adcbe78ddbfec",
+      "category": 3,
+      "codesign_strict_ok": true
+    },
+    {
+      "path": "/System/Library/CoreServices/SpringBoard.app/SpringBoard",
+      "cdhash": "ea637d6bde7ac2fcdb20b8403d7fdc10e15f206e",
+      "sha256": "ea835980610a95591fb349bca077840fab7bdd663efaa11ef054d91bc2125475",
+      "category": 1,
+      "codesign_strict_ok": false
+    }
+  ]
+}

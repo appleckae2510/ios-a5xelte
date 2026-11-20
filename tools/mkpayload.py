@@ -26,7 +26,8 @@ ADT and boot_args, inside topOfKernelData (never handed to the VM), and the
 ADT gets /chosen/memory-map "RAMDisk" = <phys, size> for IOFindBSDRoot to
 turn into md0 (boot with rd=md0).
 """
-import argparse, os, struct, sys
+import argparse, hashlib, os, struct, sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import adt  # noqa: E402
@@ -122,14 +123,34 @@ def decode(raw, fmt, image_base):
     raise ValueError(f'unsupported chained pointer format {fmt}')
 
 
-def add_ramdisk_to_adt(adt_blob, phys, size):
-    """Return the ADT with /chosen/memory-map RAMDisk = <phys, size> (two uintptr_t)."""
+def add_memory_range(adt_blob, name, phys, size):
     root, _ = adt.parse(adt_blob)
+    if name == 'TrustCache' and b'samsung,a3y17lte' not in (root.prop('compatible') or b'').split(b'\0'):
+        raise ValueError('20H392 A3 cache requested on a different board')
     chosen = next(c for c in root.children if c.name == 'chosen')
     mmap = next(c for c in chosen.children if c.name == 'memory-map')
-    assert mmap.prop('RAMDisk') is None, 'ADT already has a RAMDisk'
-    mmap.props.append(('RAMDisk', 0, struct.pack('<2Q', phys, size)))
+    if mmap.prop(name) is not None:
+        raise ValueError(f'ADT already has a {name} range')
+    mmap.props.append((name, 0, struct.pack('<2Q', phys, size)))
     return adt.serialize(root)
+
+
+def add_ramdisk_to_adt(adt_blob, phys, size):
+    return add_memory_range(adt_blob, 'RAMDisk', phys, size)
+
+
+def a3_release_cache(component):
+    """Build XNU's single-module offset table from the pinned d21ap static cache."""
+    # SHA-384 from the d21ap erase identity in Apple's 20H392 BuildManifest.
+    digest = ('9318c3d22caf985f70ca35e9df4bf0b1c023bb108ba165179fc66adc644fde00'
+              '18bdf4fa3c20fb85999ac72d60d483a6')
+    if hashlib.sha384(component).hexdigest() != digest:
+        raise ValueError('static trust cache differs from iOS 16.7.16 (20H392)')
+    module, info = adt.im4p_payload(component)
+    if info['type'] != 'trst' or info['encrypted']:
+        raise ValueError('unexpected 20H392 static-cache envelope')
+    # Preserve every entry and constraint in Apple's module.
+    return struct.pack('<II', 1, 8) + module
 
 
 def adt_dram(adt_blob):
@@ -140,7 +161,7 @@ def adt_dram(adt_blob):
             struct.unpack('<Q', chosen.prop('dram-size'))[0])
 
 
-def build(kernel_path, adt_path, cmdline, ramdisk_path=None):
+def build(kernel_path, adt_path, cmdline, ramdisk_path=None, *, a3_static_cache=None):
     buf = bytearray(open(kernel_path, 'rb').read())
     m = parse_macho(buf)
     nfix = apply_chained_fixups(buf, m)
@@ -168,6 +189,19 @@ def build(kernel_path, adt_path, cmdline, ramdisk_path=None):
         adt_blob = add_ramdisk_to_adt(adt_blob, rd_pa, rd_size)
         ramdisk = (hex(rd_pa), hex(rd_size))
 
+    if a3_static_cache is not None:
+        table = a3_release_cache(Path(a3_static_cache).read_bytes())
+        table_pa = PHYS_BASE + (kernel_end - virt_base)
+        extent = (len(table) + PAGE - 1) & ~(PAGE - 1)
+        adt_blob = add_memory_range(adt_blob, 'TrustCache', table_pa, len(table))
+        pieces.append((kernel_end, extent, table))
+        kernel_end += extent
+        # The Samsung A3 shim reserves boot_args on its own 4 KiB boundary.
+        shim_page = 4096
+        adt_extent = (len(adt_blob) + shim_page - 1) & ~(shim_page - 1)
+        if kernel_end - virt_base + adt_extent + shim_page > MEM_SIZE or len(pieces) > 32:
+            raise ValueError('A3 loader has insufficient space for the static cache and boot arguments')
+
     hdr_size = SEG_TABLE + 32 * len(pieces)
     out = bytearray(hdr_size)
     seg_table = []
@@ -190,6 +224,8 @@ def build(kernel_path, adt_path, cmdline, ramdisk_path=None):
     info = dict(cputype=hex(m['cputype']), cpusub=m['cpusub'], fixups=nfix, virt_base=hex(virt_base),
                 entry=hex(m['entry']), kernel_end=hex(kernel_end), ramdisk=ramdisk, size=len(out),
                 segs=[(s['name'], hex(s['vmaddr']), hex(s['vmsize'])) for s in segs])
+    if a3_static_cache is not None:
+        info['static_cache'] = dict(build='20H392', physical_address=hex(table_pa), byte_length=len(table))
     return bytes(out), info
 
 

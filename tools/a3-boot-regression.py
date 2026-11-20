@@ -87,12 +87,13 @@ def startup_path(kernel):
     print("PASS: Mach startup, lockdown, BSD, HFS, root selection and PID 1 call paths")
 
 
-def policy_lifecycle(kernel):
+def policy_lifecycle(kernel, trust_fixture=None):
     """Run the real MAC entry points on one modeled core, with the Mach-O protections."""
     from unicorn import Uc, UC_ARCH_ARM64, UC_MODE_ARM, UC_HOOK_CODE
     from unicorn.arm64_const import (UC_CPU_ARM64_A53, UC_ARM64_REG_LR,
                                      UC_ARM64_REG_PC, UC_ARM64_REG_PSTATE, UC_ARM64_REG_SP,
-                                     UC_ARM64_REG_X0, UC_ARM64_REG_X1, UC_ARM64_REG_X2)
+                                     UC_ARM64_REG_X0, UC_ARM64_REG_X1, UC_ARM64_REG_X2,
+                                     UC_ARM64_REG_X3)
 
     from mkpayload import apply_chained_fixups, parse_macho
 
@@ -125,7 +126,7 @@ def policy_lifecycle(kernel):
         cpu.hook_add(UC_HOOK_CODE, external_return, begin=address, end=address)
 
     def call(name, *arguments):
-        for register, value in zip((UC_ARM64_REG_X0, UC_ARM64_REG_X1, UC_ARM64_REG_X2), arguments):
+        for register, value in zip((UC_ARM64_REG_X0, UC_ARM64_REG_X1, UC_ARM64_REG_X2, UC_ARM64_REG_X3), arguments):
             cpu.reg_write(register, value)
         cpu.reg_write(UC_ARM64_REG_SP, temp + 0x10000)
         cpu.reg_write(UC_ARM64_REG_LR, stop)
@@ -162,6 +163,10 @@ def policy_lifecycle(kernel):
         raise ValueError("pre-lockdown MAC registration failed after initmach")
     if struct.unpack("<I", cpu.mem_read(handle + 4, 4))[0] != 1 or struct.unpack("<I", cpu.mem_read(table, 4))[0] != 2:
         raise ValueError("second early policy did not receive a distinct active slot")
+    if trust_fixture is not None:
+        trust_fixture.install_boot_inputs(cpu, call)
+        call("_trust_cache_runtime_init")
+        call("_load_static_trust_cache")
     # Model XNU's normal transition into STARTUP_SUB_LOCKDOWN and its final mappings.
     cpu.mem_write(at("_startup_phase"), struct.pack("<I", 0xffffffff))
     for _, addr, length, _, _, prot in kernel.segments:
@@ -179,6 +184,8 @@ def policy_lifecycle(kernel):
     print("PASS: Cortex-A53 early registration, Mach, lockdown, BSD and rejected late mutation")
     from a3_boot_filesystems import check_filesystems
     check_filesystems(kernel, cpu)
+    if trust_fixture is not None:
+        trust_fixture.query_boot_files(cpu, call)
     if before != (cpu.mem_read(table, 32), cpu.mem_read(entries, 64)):
         raise ValueError("filesystem or PID 1 setup modified the sealed registry")
 

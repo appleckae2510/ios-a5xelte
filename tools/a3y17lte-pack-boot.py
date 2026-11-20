@@ -67,6 +67,8 @@ def main():
     p.add_argument('--kernel', required=True, type=Path, help='A3-specific XNU from a3-xnu CI')
     p.add_argument('--loader', required=True, type=Path)
     p.add_argument('--ramdisk', type=Path, help='optional md0 image (HFS volume or mockfs test executable)')
+    p.add_argument('--a3-static-cache', type=Path, metavar='20H392-IM4P',
+                   help='pass the original d21ap 20H392 static trust cache to XNU')
     p.add_argument('--product-adt', type=Path, help='matching Apple product metadata from the root build')
     p.add_argument('--ios-root', action='store_true',
                    help='boot a separately installed HFSX iOS root from USERDATA with writes inside that partition')
@@ -84,6 +86,8 @@ def main():
         p.error('--ios-root and --ramdisk select different root devices')
     if a.combined and (a.ios_root or not a.ramdisk or not a.product_adt):
         p.error('--combined requires --ramdisk and --product-adt and selects the root automatically')
+    if a.a3_static_cache and not a.combined:
+        p.error('--a3-static-cache requires the combined A3 boot profile')
     if not a.allow_unverified_handoff:
         p.error('Review the handoff for this image and pass --allow-unverified-handoff to build it.')
     with zipfile.ZipFile(a.evidence) as z:
@@ -135,7 +139,8 @@ def main():
             raise ValueError('Product ADT file is missing')
         tree_path.write_bytes(adt.serialize(board.build(a.product_adt)))
         payload, info = mkpayload.build(str(a.kernel), str(tree_path), cmdline,
-                                        str(a.ramdisk) if a.ramdisk else None)
+                                        str(a.ramdisk) if a.ramdisk else None,
+                                        a3_static_cache=a.a3_static_cache)
     combined = bytearray(loader.ljust(0x4000, b'\0')) + b'A3XNPAY1' + struct.pack('<Q', len(payload)) + payload
     struct.pack_into('<Q', combined, 16, (len(combined) + 0x10000 + 4095) & ~4095)
     # S-Boot's conventional low-memory staging must stay below firmware logs.

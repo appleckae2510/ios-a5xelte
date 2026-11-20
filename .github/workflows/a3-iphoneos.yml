@@ -3,7 +3,7 @@ run-name: A320FL native iPhoneOS 16 kernel
 on:
   push:
     branches: [experiment/a3y17lte-iphoneos-20261119]
-    paths: ['.github/workflows/a3-iphoneos.yml', 'tools/a3-native-target.py', 'tools/a3-check-kernel-target.py', 'tools/a3-boot-regression.py', 'tools/a3_boot_filesystems.py', 'tools/a3-native-sources.py', 'tools/a3-compile-loader.py', 'xnu/a3y17lte-patches/**']
+    paths: ['.github/workflows/a3-iphoneos.yml', 'tools/a3-native-target.py', 'tools/a3-check-kernel-target.py', 'tools/a3-boot-regression.py', 'tools/a3_boot_filesystems.py', 'tools/a3-boot-trust-test.py', 'tools/a3y17lte-pack-boot.py', 'tools/mkpayload.py', 'tests/a3-20h392-startup.json', 'tools/a3-native-sources.py', 'tools/a3-compile-loader.py', 'xnu/a3y17lte-patches/**']
   workflow_dispatch:
 
 permissions:
@@ -341,7 +341,7 @@ jobs:
           retention-days: 3
 
   boot-regression:
-    name: Cortex-A53 sealed MAC, HFS and PID 1 handoff
+    name: Cortex-A53 combined boot and stock iOS task lookup
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -358,4 +358,5 @@ jobs:
           python-version: '3.12'
       - run: |
           python -m pip install --only-binary=:all: 'unicorn==2.1.4'
-      - run: python tools/a3-boot-regression.py kernel/kernel.development.a5xelte
+      - name: Qualify the Apple boot-task cache on the linked A3 kernel
+        run: python tools/a3-boot-trust-test.py kernel/kernel.development.a5xelte --require-lookup

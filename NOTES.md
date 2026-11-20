@@ -1,18 +1,16 @@
 # A3Y17LTE active handoff — 2026-11-20
 
-BOOT v0.9.1 is ready for an SM-A320FL trial over the existing A3IOSROOT.
-The phone's v0.9 panic mapped to a BSD-time MAC registration writing into
-the native kernel's protected policy table. The A3 native build now respects
-the Mach/lockdown/BSD order and rejects late registry changes. Proper
-early security services are still needed by iOS; restoring the donor late
-replacement policies is not part of this fix.
+The SM-A320FL now displays Apple launchd 7.0.0, system creation and the
+fsck boot task. The first fatal line is a userspace panic because launchd
+does not recognize /sbin/fsck as a platform binary. The image on the phone
+did not display a BOOT hash. The last packaged kernel was v0.9.1.
 
-The tested kernel came from 5d69c5dc464e286d87670edd0ac4e72629221f76, Actions
-run 44743123110. The sealed-policy/HFS/PID 1 regression is automatic on
-this experimental branch. All 11 packaged loader handoffs, 17 combined
-volume/peripheral scenarios and 14 simulated TWRP/PowerShell cases passed.
-Real Apple launchd execution, SpringBoard, peripherals and a physical v0.9.1
-boot remain unverified. See A3Y17LTE_PROGRESS.md for evidence and hashes.
+A read-only audit of the released 20H392 root verified the signed fsck,
+mount, launchd and dyld against the original static trust cache. The A3
+packer can now carry that exact module through the loader into XNU's
+device tree. Its native Image4/AMFI platform validation backend remains
+unavailable. The combined acceptance check marks this state as blocked.
+No replacement BOOT has been issued. See A3Y17LTE_PROGRESS.md.
 
 ---
 

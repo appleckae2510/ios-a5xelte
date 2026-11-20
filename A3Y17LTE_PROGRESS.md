@@ -487,3 +487,46 @@ Their execution on an SM-A320FL with v0.9.1 has not been observed. Hardware
 radio, camera, audio and touch service functionality remain unverified.
 The next hardware evidence is the first new boot milestone or panic after
 a confirmed BOOT-only update on the existing root.
+
+## 2026-11-20 — Apple launchd reached the fsck boot task on an SM-A320FL
+
+The device photo shows Darwin Bootstrapper 7.0.0 and launchd creating
+system services. It stops when launchd checks whether /sbin/fsck is a
+platform binary. This is later than the prior static MAC registry fault.
+No fsck result, SpringBoard execution or peripheral service is shown.
+
+Private read-only CI audited all three published parts of the A3IOSROOT
+20H392 release against their SHA-256 values and mounted the resulting
+HFSX volume read-only. The original d21ap restore manifest was fingerprinted
+and its static trust cache checked by SHA-384. Ten arm64 CodeDirectory
+hashes matched. Nine executables passed standalone strict codesign
+verification. The SpringBoard executable hash matches, but macOS rejects
+its bundle's legacy resource envelope in strict mode. For fsck the
+cache entry is e1a3f12fb8be72d6e9a4e4178ebe152513bc599a, category 3.
+The two optional macOS-style filesystem-bundle paths are absent.
+All helpers tested in /sbin are present. No Apple executable was
+published. The normalized measurements are in tests/a3-20h392-startup.json.
+
+The A3 combined packer can now hand off the exact d21ap static cache
+through /chosen/memory-map/TrustCache. It preserves the original v2
+module with all 2,754 entries, hash types, flags and constraint categories.
+The address and unpadded byte length use XNU's two-word DT ABI. The whole
+module occupies its own reserved loader segment after the diagnostic RAM
+disk. Supply the original Firmware/087-86694-044.dmg.trustcache from
+20H392 using the packer's --a3-static-cache option.
+
+All eleven EL1/EL2 and display control loader trials of the engineering
+image reached the native entry marker and compared the destination
+bytes. The A53 test runs the linked kernel's SecureDT lookup, early
+cache initialization, MAC lockdown, HFS and PID 1 path preparation. It
+then tests static cache capabilities and looks up all ten measured
+hashes plus negative inputs. On the v0.9.1 native kernel, capabilities
+returned KERN_NOT_SUPPORTED (46), zero caches, and each static lookup
+returned KERN_NOT_FOUND (56). The native provider is still required for
+executable identity and launch policy. A packaged trust cache by itself
+does not grant any platform status. The check uses a single CPU model.
+A pass on this lookup criterion will still need a real device boot.
+
+The native build workflow calls the combined check with --require-lookup.
+A kernel with this known missing service fails the qualification step
+even if compilation succeeds. No new flash package has been issued.
