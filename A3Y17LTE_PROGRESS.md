@@ -530,3 +530,38 @@ A pass on this lookup criterion will still need a real device boot.
 The native build workflow calls the combined check with --require-lookup.
 A kernel with this known missing service fails the qualification step
 even if compilation succeeds. No new flash package has been issued.
+
+## 2026-11-20 — Protected identity measurement and combined boot qualification
+
+Commit 2b4707ab87af41e07883d4b21387bdcb5475b01e implements measurement
+of the exact 20H392 v2 cache in the native arm64 kernel. The loader passes
+the original module through the device tree. XNU validates the range
+against boot arguments, copies the module into the pre-lockdown private
+buffer and verifies SHA-384 over that copy before making it available.
+Search results preserve each stock launch-constraint category. The MAC
+diagnostic for launchd, fsck and mount records the ordinary platform
+decision. The measurement makes no change to authorization decisions.
+
+[Build and qualification in GitHub Actions](https://github.com/appleckae2510/ios-a5xelte/actions/runs/44794529811)
+
+The kernel and loaders compiled. The kernel artifact SHA-256 is
+9ae54f16544f4a974d985b23c122e31f2453e1af756115a26970c9697e9b8d14.
+Tests exercised the linked SecureDT, MAC initialization and lockdown,
+HFS registration and the call path that prepares PID 1. A modified
+constraint was rejected. All ten measured identities matched after
+lockdown and retained their original constraint categories after the
+loader source was overwritten in the test. The system static-cache API
+returned status 46 with zero caches and status 56 on all ten lookups.
+The requested qualification consequently finished with status 3.
+
+Locally packaged SM-A320FL engineering BOOT SHA-256:
+24a30a4590f284038fb33def7ff3250a3e974fe277d08b73f66217a71cff4318.
+The package was replayed through eleven loader cases covering EL1/EL2,
+four device-tree variants and display-control conditions. Seventeen
+combined storage and board scenarios picked the expected root (five
+eMMC, twelve diagnostic RAM) without issuing eMMC writes. The packaged
+RAM disk matched the diagnostic programs tested. These are modeled
+checks. A physical boot of this candidate, Apple's platform authorization
+for fsck, SpringBoard and peripheral operation remain unverified. The
+latest handset photo still identifies the boot-task policy check as the
+first fatal error. No new flash package was issued.

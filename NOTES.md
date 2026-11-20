@@ -1,16 +1,18 @@
 # A3Y17LTE active handoff — 2026-11-20
 
-The SM-A320FL now displays Apple launchd 7.0.0, system creation and the
-fsck boot task. The first fatal line is a userspace panic because launchd
-does not recognize /sbin/fsck as a platform binary. The image on the phone
-did not display a BOOT hash. The last packaged kernel was v0.9.1.
+The SM-A320FL photo shows Apple launchd 7.0.0 beginning its fsck boot
+task, then reporting that /sbin/fsck is not a platform binary. It gives
+no BOOT hash. The last flash package is v0.9.1.
 
-A read-only audit of the released 20H392 root verified the signed fsck,
-mount, launchd and dyld against the original static trust cache. The A3
-packer can now carry that exact module through the loader into XNU's
-device tree. Its native Image4/AMFI platform validation backend remains
-unavailable. The combined acceptance check marks this state as blocked.
-No replacement BOOT has been issued. See A3Y17LTE_PROGRESS.md.
+At 2b4707ab87af, the A3 kernel authenticates a private copy of the
+original 20H392 static trust cache before lockdown. Its measurement code
+finds all ten audited release executables with their original constraints.
+It records the existing platform decision when examining fsck, mount and
+launchd. The system platform-validation provider still reports no static
+cache. Qualification exits 3. GitHub run 44794529811 built the kernel
+and loaders. The packaged candidate passed 11 loader trials and 17
+root-selection scenarios in the model. A physical boot of the candidate
+is pending. No new flash package has been issued. See A3Y17LTE_PROGRESS.md.
 
 ---
 
