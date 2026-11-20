@@ -565,3 +565,29 @@ checks. A physical boot of this candidate, Apple's platform authorization
 for fsck, SpringBoard and peripheral operation remain unverified. The
 latest handset photo still identifies the boot-task policy check as the
 first fatal error. No new flash package was issued.
+
+## 2026-11-20 — Engineering files delivered at the user's request
+
+Galaxy-A3-A320FL-Entwicklungsstand-2026-11-20.zip contains the existing
+2b4707ab87af compiled kernel, its matching 27,250,704-byte BOOT, ADT,
+profile, the 11-loader/17-root-selection logs, the failing native
+qualification log and German instructions. Its 17 files include a
+Windows SHA-256/size checker. File checks complete with status 3 to make
+the unresolved boot qualification visible. A corrupt or missing file
+produces status 1. The archive documents that the new Windows checker
+has not been executed on a Windows host.
+
+ZIP size: 14,822,350 bytes.
+ZIP SHA-256: 58b39b74d008392a620e9bc79b54e4a93886fbe89d1c275b2fea714a24f86fdf.
+
+Archive CRC, manifest membership, byte lengths and every declared SHA-256
+were verified after packaging. The kernel and BOOT match the earlier
+run and engineering metadata. No new kernel compilation was needed for
+this handoff. The supplied TWRP steps describe an optional BOOT diagnostic
+trial and restoration from the user's own BOOT backup. The complete
+Apple root is a prerequisite and is not part of this delivery.
+
+The known fsck platform authorization blocker is still open. This
+delivery does not establish successful SpringBoard or camera, audio,
+Wi-Fi, Bluetooth, modem or touch operation. Completing those services
+requires further kernel and board work followed by hardware tests.

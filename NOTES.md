@@ -1,18 +1,22 @@
 # A3Y17LTE active handoff — 2026-11-20
 
-The SM-A320FL photo shows Apple launchd 7.0.0 beginning its fsck boot
-task, then reporting that /sbin/fsck is not a platform binary. It gives
-no BOOT hash. The last flash package is v0.9.1.
+The device photo reaches Apple launchd 7.0.0 and the fsck boot task, then
+reports that /sbin/fsck is not a platform binary. It shows no BOOT hash.
 
-At 2b4707ab87af, the A3 kernel authenticates a private copy of the
-original 20H392 static trust cache before lockdown. Its measurement code
-finds all ten audited release executables with their original constraints.
-It records the existing platform decision when examining fsck, mount and
-launchd. The system platform-validation provider still reports no static
-cache. Qualification exits 3. GitHub run 44794529811 built the kernel
-and loaders. The packaged candidate passed 11 loader trials and 17
-root-selection scenarios in the model. A physical boot of the candidate
-is pending. No new flash package has been issued. See A3Y17LTE_PROGRESS.md.
+Kernel commit 2b4707ab87af41e07883d4b21387bdcb5475b01e compiles in run
+44794529811. The private cache measurement recognizes the ten original
+20H392 executables. The regular static-cache platform provider remains
+unavailable. The combined native qualification exits 3. Eleven modeled
+loader trials and seventeen root-selection trials passed. A physical
+boot of this candidate and SpringBoard remain unverified.
+
+At the user's request the existing engineering bytes were delivered as
+Galaxy-A3-A320FL-Entwicklungsstand-2026-11-20.zip, with the matching
+symbol-bearing kernel, BOOT profile, original test logs, German TWRP
+diagnostic instructions and a local Windows checksum checker.
+The archive explicitly documents the fsck blocker. Its SHA-256 is
+58b39b74d008392a620e9bc79b54e4a93886fbe89d1c275b2fea714a24f86fdf.
+See A3Y17LTE_PROGRESS.md.
 
 ---
 
