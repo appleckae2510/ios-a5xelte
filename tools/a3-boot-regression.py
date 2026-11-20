@@ -94,19 +94,22 @@ def policy_lifecycle(kernel):
                                      UC_ARM64_REG_PC, UC_ARM64_REG_PSTATE, UC_ARM64_REG_SP,
                                      UC_ARM64_REG_X0, UC_ARM64_REG_X1, UC_ARM64_REG_X2)
 
+    from mkpayload import apply_chained_fixups, parse_macho
+
     cpu = Uc(UC_ARCH_ARM64, UC_MODE_ARM)
     cpu.ctl_set_cpu_model(UC_CPU_ARM64_A53)
     cpu.reg_write(UC_ARM64_REG_PSTATE, 0x3c5)
     cpu.cpr_write(3, 0, 1, 0, 2, 3 << 20)
-    base = min(s[1] for s in kernel.segments)
+    image = bytearray(kernel.data)
+    apply_chained_fixups(image, parse_macho(image))
 
     def at(name):
-        return kernel.symbols[name] - base + 0x20000000
+        return kernel.symbols[name]
 
     for name, addr, length, off, size, prot in kernel.segments:
-        start = addr - base + 0x20000000
+        start = addr
         cpu.mem_map(start, length, prot | (2 if name == "__DATA_CONST" else 0))
-        cpu.mem_write(start, kernel.data[off:off + size])
+        cpu.mem_write(start, bytes(image[off:off + size]))
 
     temp = 0x50000000
     stop = temp + 0x18000
@@ -151,10 +154,18 @@ def policy_lifecycle(kernel):
     call("_mac_policy_initmach")
     if struct.unpack("<I", cpu.mem_read(at("_mac_late"), 4))[0] != 1:
         raise ValueError("Mach policy initialization did not finish")
+    # Native services can still register between initmach and lockdown.
+    second = temp + 0x3000
+    cpu.mem_write(temp + 640, b"a3-next\0second early policy\0")
+    cpu.mem_write(second, struct.pack("<QQ16xQ", temp + 640, temp + 648, ops))
+    if call("_mac_policy_register", second, handle + 4, 0) != 0:
+        raise ValueError("pre-lockdown MAC registration failed after initmach")
+    if struct.unpack("<I", cpu.mem_read(handle + 4, 4))[0] != 1 or struct.unpack("<I", cpu.mem_read(table, 4))[0] != 2:
+        raise ValueError("second early policy did not receive a distinct active slot")
     # Model XNU's normal transition into STARTUP_SUB_LOCKDOWN and its final mappings.
     cpu.mem_write(at("_startup_phase"), struct.pack("<I", 0xffffffff))
     for _, addr, length, _, _, prot in kernel.segments:
-        cpu.mem_protect(addr - base + 0x20000000, length, prot)
+        cpu.mem_protect(addr, length, prot)
 
     before = (cpu.mem_read(table, 32), cpu.mem_read(entries, 8 * 8))
     call("_mac_policy_initbsd")
@@ -166,6 +177,10 @@ def policy_lifecycle(kernel):
     if before != (cpu.mem_read(table, 32), cpu.mem_read(entries, 64)) or cpu.mem_read(handle, 4) != b"\xf1" * 4:
         raise ValueError("sealed policy registry or rejected handle changed")
     print("PASS: Cortex-A53 early registration, Mach, lockdown, BSD and rejected late mutation")
+    from a3_boot_filesystems import check_filesystems
+    check_filesystems(kernel, cpu)
+    if before != (cpu.mem_read(table, 32), cpu.mem_read(entries, 64)):
+        raise ValueError("filesystem or PID 1 setup modified the sealed registry")
 
 
 if __name__ == "__main__":
