@@ -432,3 +432,58 @@ A3IOSROOT installation, followed by the first panic or console photo.
 The combined profile uses rd=a3auto and emmcwrite=0. Services requiring
 writable storage may stop later. No new USERDATA installation is needed
 for this kernel platform change.
+
+## 2026-11-20 — v0.9.1 native MAC policy lifetime and boot regression
+
+The physical v0.9 report says `Unexpected fault in kernel static region`.
+Its PC resolves in the exact v0.9 Mach-O to `mac_policy_register + 0x474`.
+The store's address is `mac_policy_list.freehint` (+0x14); the input is the
+donor policy configuration. The fault is during a BSD-time registration
+after `machine_lockdown`. The generic panic-handshake footer is separate.
+
+In the A3 native iOS build, ordinary Mach registrations remain possible
+before lockdown. BSD uses those policies and continues to HFS. The
+native register/unregister APIs return EPERM/EBUSY once the static table
+is sealed. The donor BSD call that attempted two late registrations is
+omitted. Exec and signature verification were not relaxed, the original
+panic handlers remain active, and the immutable segment retains read-only
+permissions. A working native policy provider may still be needed by Apple
+services. USERDATA stays read-only and the package stages only BOOT.
+
+Build 44743123110, job 136311520104, commit 5d69c5dc464e286d87670edd0ac4e72629221f76.
+The XNU source is xnu-8796.141.3, ARM64_ALL, native iOS 16.7/Cortex-A53.
+Kernel artifact 14631434741 (17533208 bytes);
+SHA-256 f0afc719b9a9909dfc54a5ef4e0392483cd94edc555bfb735fc4e17a1b7eb782.
+Image 27117584 bytes, SHA-256 97de7ab315484b58f6e72123672e84b1b0eccb354ff5f962b46f9312f6a01bb9.
+Galaxy-A3-A320FL-iOS16-BOOT-v0.9.1-Windows.zip (7782839 bytes),
+SHA-256 1743cab9d12c483f7139a2fd417733e539abc70659c5f5f5b3da48c8e352fdbd. The pinned donor checkout became unavailable during
+this run. The build uses the same pre-existing source checkpoint, now
+verified by SHA-256 before extraction and retained in an Actions cache.
+
+The native build runs a static call-order/placement check and a single-core
+Cortex-A53 replay on the linked executable. Both early registration windows,
+BSD initialization, rejected late register/unregister operations, actual HFS
+registration, release init path lookup and 64-bit argv setup share one VM
+with final Mach-O permissions after lockdown. The old v0.9 executable is a
+negative control for the obsolete late call. The test uses modeled memory
+allocation, locks and I/O services and stops before process credentials/exec.
+
+Local tests used the exact distributed BOOT, with all kernel segment bytes
+matched back to the artifact. Eleven loader trials covered all four stock
+Samsung DT variants from EL1 and EL2, software update trigger/second display
+buffer, unpowered and clock-gated display. Seventeen combined A3 hardware
+and volume selections used modeled peripherals. Five valid release catalog
+cases selected emmcroot0 after 708 sector reads and rejected a subsequent
+write with EROFS without any media write. These include ready, silent and
+malformed Bluetooth replies and an unavailable PMU status mapping. Twelve
+cases selected the RAM diagnosis and ran its test payloads under modeled
+Darwin system calls, including one synthetic HFSX case per missing launchd,
+dyld, shared cache and SpringBoard entry. Fourteen PowerShell/TWRP cases
+covered model/partition identity, staging, retry and byte-verified readback.
+
+The prior native release audit established iOS 16.7/arm64 metadata for the
+real Apple launchd, dyld and SpringBoard in the prepared 20H392 root.
+Their execution on an SM-A320FL with v0.9.1 has not been observed. Hardware
+radio, camera, audio and touch service functionality remain unverified.
+The next hardware evidence is the first new boot milestone or panic after
+a confirmed BOOT-only update on the existing root.

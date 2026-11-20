@@ -1,16 +1,18 @@
 # A3Y17LTE active handoff — 2026-11-20
 
-Native iPhoneOS BOOT v0.9 is built and packaged for SM-A320FL. Full CI run
-44615970616 succeeded from 2abdc33f805944bca26a063867e2f41407a9de6e.
-The previous launchd panic reported OS_REASON_EXEC / WRONG_PLATFORM.
-This kernel uses XNU_TARGET_OS_IOS and Mach-O iOS platform 2, minOS 16.7.
+BOOT v0.9.1 is ready for an SM-A320FL trial over the existing A3IOSROOT.
+The phone's v0.9 panic mapped to a BSD-time MAC registration writing into
+the native kernel's protected policy table. The A3 native build now respects
+the Mach/lockdown/BSD order and rejects late registry changes. Proper
+early security services are still needed by iOS; restoring the donor late
+replacement policies is not part of this fix.
 
-The Windows package is Galaxy-A3-A320FL-iOS16-BOOT-v0.9-Windows.zip.
-Nine combined root-selection replays, EL1/EL2 loader handoffs, and fourteen
-Windows checker fixtures passed. Physical boot and Apple userland remain
-unverified. Use the existing A3IOSROOT volume for the BOOT-only trial.
-The current profile has emmcwrite=0. See A3Y17LTE_PROGRESS.md for hashes,
-artifact IDs, exact test scope and the pending hardware checkpoint.
+The tested kernel came from 5d69c5dc464e286d87670edd0ac4e72629221f76, Actions
+run 44743123110. The sealed-policy/HFS/PID 1 regression is automatic on
+this experimental branch. All 11 packaged loader handoffs, 17 combined
+volume/peripheral scenarios and 14 simulated TWRP/PowerShell cases passed.
+Real Apple launchd execution, SpringBoard, peripherals and a physical v0.9.1
+boot remain unverified. See A3Y17LTE_PROGRESS.md for evidence and hashes.
 
 ---
 
