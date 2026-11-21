@@ -16,13 +16,18 @@ import mkpayload
 
 TOOLS = Path(__file__).resolve().parent
 BASELINE = TOOLS.parent / "tests/a3-20h392-startup.json"
-# Only the pinned static component is read; the packer verifies its manifest digest.
+# Only pinned original components are read; the packer verifies their manifest digests.
 APPLE_IPSW = ("https://updates.cdn-apple.com/2025FallFCS/fullrestores/122-76738/"
               "B6C604B4-548E-401F-BBFF-916E3FFDF235/iPhone_5.5_P3_16.7.16_20H392_Restore.ipsw")
 
 
-def fetch_component():
-    start, end = 6031110591, 6031110591 + 59790 + 2047
+def fetch_component(kind='system'):
+    name, start, compressed = {
+        'system': ('Firmware/087-86694-044.dmg.trustcache',6031110591,59790),
+        'app': ('Firmware/087-86715-047.dmg.trustcache',6031170622,747),
+        'cryptex-system': ('Firmware/087-86588-047.dmg.trustcache',6009104980,1421),
+    }[kind]
+    end = start + compressed + 2047
     request = urllib.request.Request(APPLE_IPSW, headers={"Range": f"bytes={start}-{end}", "Accept-Encoding": "identity"})
     with urllib.request.urlopen(request, timeout=60) as response:
         if response.status != 206 or response.headers.get("Content-Range") != f"bytes {start}-{end}/6158048697":
@@ -31,10 +36,10 @@ def fetch_component():
     if len(block) != end - start + 1 or block[:4] != b"PK\x03\x04" or struct.unpack_from("<H", block, 8)[0] != 8:
         raise ValueError("unexpected ZIP header or range length")
     nl, extra = struct.unpack_from("<HH", block, 26)
-    if block[30:30+nl] != b"Firmware/087-86694-044.dmg.trustcache":
+    if block[30:30+nl] != name.encode():
         raise ValueError("wrong ZIP member")
     pos = 30 + nl + extra
-    return zlib.decompress(block[pos:pos+59790], -15)
+    return zlib.decompress(block[pos:pos+compressed], -15)
 
 
 class TrustFixture:
@@ -45,6 +50,8 @@ class TrustFixture:
         self.results = {}
         self.platform_ready = False
         self.sandbox_ready = False
+        self.cryptex_ready = False
+        self.cryptex_table = None
         table = mkpayload.a3_release_cache(component)
         virt, _, adtoff, adtlen, kernel_end, phys, memory = struct.unpack_from("<7Q", payload, 16)
         self.tree = payload[adtoff:adtoff+adtlen]
@@ -53,6 +60,20 @@ class TrustFixture:
             raise ValueError("not an A3 device tree")
         chosen = next(n for n in root.children if n.name == "chosen")
         mmap = next(n for n in chosen.children if n.name == "memory-map")
+        if prop := root.prop('a3-cryptex-trustcache'):
+            self.cryptex_table = bytes(prop)
+            if len(prop)!=2244 or hashlib.sha384(prop).hexdigest()!=mkpayload.A3_CRYPTEX_TABLE_SHA384:
+                raise ValueError('Cryptex property differs from original components')
+            self.cryptex_offset = self.tree.index(prop)
+            if self.tree.count(prop)!=1:raise ValueError('ambiguous Cryptex property')
+            self.cryptex_entries = []
+            for module,offset in enumerate(struct.unpack_from('<2I',prop,4)):
+                count=struct.unpack_from('<I',prop,offset+20)[0]
+                if count != (30,61)[module]:raise ValueError('wrong Cryptex module count')
+                self.cryptex_entries.extend(struct.iter_unpack('<20sBBBB',prop[offset+24:offset+24+count*24]))
+            target = bytes.fromhex(baseline['cryptex_files'][0]['cdhash'])
+            if not any(row[0]==target and row[1:]==(2,0,1,0) for row in self.cryptex_entries):
+                raise ValueError('audited ARM64 webbookmarksd identity is absent')
         self.physical, size = struct.unpack("<2Q", mmap.prop("TrustCache"))
         ram_pa, ram_size = struct.unpack("<2Q", mmap.prop("RAMDisk"))
         if size != len(table) or self.physical < ram_pa + ram_size or self.physical % 4096:
@@ -159,6 +180,16 @@ class TrustFixture:
                 raise ValueError("a modified cache granted platform identity")
         cpu.mem_write(self.table_va + changed_pos, bytes([original]))
         print("PASS: native measurement rejects a modified launch constraint")
+        if self.cryptex_table is not None:
+            where = self.area + self.cryptex_offset
+            changed = 12+24+22
+            cpu.mem_write(where+changed,bytes([self.cryptex_table[changed]^1]))
+            call('_a3_measure_cryptex_cache')
+            cpu.mem_write(self.buffer+96,self.cryptex_entries[0][0])
+            if call('_a3_cryptex_identity',self.buffer+96,wide=True):
+                raise ValueError('modified Cryptex cache granted an identity')
+            cpu.mem_write(where+changed,bytes([self.cryptex_table[changed]]))
+            print('PASS: native Cryptex measurement rejects a changed constraint before lockdown')
 
     def check_sandbox(self, cpu, call):
         if '_a3_stock_sandbox_result' not in call.symbols:
@@ -200,6 +231,35 @@ class TrustFixture:
     def kernel_const_address(self,address):
         segment=self.kernel.segment(address)
         return segment[0]=='__DATA_CONST' and segment[-1]==1
+
+    def check_cryptex(self, cpu, call):
+        if self.cryptex_table is None:
+            cpu.mem_write(self.buffer+96,bytes.fromhex('b0a439a33ae99ae3ca1bc102fe61802394582d36'))
+            if call('_a3_authorize_boot_flags',self.buffer+96,2,0x4000,0)!=0:
+                raise ValueError('App identity was authorized without its original Cryptex module')
+            print('Original Cryptex modules absent: audited webbookmarksd is correctly not authorized')
+            return
+        for name in ('_a3_measured_cryptex','_a3_cryptex_ready'):
+            if not self.kernel_const_address(call.symbols[name]):
+                raise ValueError('Cryptex state is not protected at lockdown')
+        cpu.mem_write(self.area+self.cryptex_offset, bytes(len(self.cryptex_table)))
+        for row in self.cryptex_entries:
+            cdhash,kind,flags,category,reserved=row
+            cpu.mem_write(self.buffer+96,cdhash)
+            match=call('_a3_measured_identity',self.buffer+96,wide=True)
+            if not match or cpu.mem_read(match,24)!=cdhash+bytes((kind,flags,category,reserved)):
+                raise ValueError('native Cryptex lookup lost original entry metadata')
+            for mount in (0x4000,0x4001,1):
+                if call('_a3_authorize_boot_flags',self.buffer+96,kind,mount,0x1234)!=(0x1234|0x24000000):
+                    raise ValueError('original Cryptex identity lacks platform flags on root/read-only mount')
+            for kind2,mount in ((kind,0),(1 if kind!=1 else 2,0x4000)):
+                if call('_a3_authorize_boot_flags',self.buffer+96,kind2,mount,0x1234)!=0x1234:
+                    raise ValueError('Cryptex policy accepted a wrong type or unrelated writable mount')
+        cpu.mem_write(self.buffer+96,bytes.fromhex('b0a439a33ae99ae3ca1bc102fe61802394582d36'))
+        if call('_a3_stock_sandbox_result',2,self.buffer+96,2,1)!=0:
+            raise ValueError('audited webbookmarksd cannot use stock Sandbox compatibility')
+        self.cryptex_ready=True
+        print('PASS: 91 original Cryptex identities, root/read-only mount scope, invalid-type controls and original webbookmarksd platform/Sandbox status')
 
     def query_boot_files(self, cpu, call):
         buf = self.buffer
@@ -249,6 +309,7 @@ class TrustFixture:
         if not self.lookup_ready and (rc != 46 or num != 0 or any(s != 56 for s in self.results.values())):
             raise ValueError("partial or unexpected native trust-cache results; inspect each result")
         self.check_sandbox(cpu, call)
+        self.check_cryptex(cpu, call)
         print("PASS: negative lookup controls")
         message = ("Stock static-cache lookup available in the kernel model." if self.lookup_ready else
                    "Global static-cache API unavailable: KERN_NOT_SUPPORTED. See the separate native boot policy result.")
@@ -264,6 +325,7 @@ def run():
     p.add_argument("kernel", type=Path)
     p.add_argument("--cache", type=Path, help="original d21ap 20H392 static cache IM4P; otherwise read from Apple's IPSW")
     p.add_argument("--payload", type=Path, help="existing SWEETXNU payload; otherwise create an A3 build fixture")
+    p.add_argument("--require-cryptex-policy", action="store_true", help="require the original App/System Cryptex lists")
     p.add_argument("--require-sandbox-policy", action="store_true", help="require the native stock-only Sandbox policy")
     p.add_argument("--require-lookup", action="store_true", help="exit 3 if the native kernel cannot find the stock boot tasks")
     p.add_argument("--require-platform-policy", action="store_true",
@@ -289,7 +351,12 @@ def run():
             tree.write_bytes(adt.serialize(mkadt_a3y17lte.build()))
             ram.write_bytes(b"A3 loader test")
             cache.write_bytes(component)
-            payload, _ = mkpayload.build(args.kernel, tree, "rd=a3auto", ram, a3_static_cache=cache)
+            extra = {}
+            if args.require_cryptex_policy:
+                app, system = d/'app.trustcache', d/'cryptex-system.trustcache'
+                app.write_bytes(fetch_component('app')); system.write_bytes(fetch_component('cryptex-system'))
+                extra = dict(a3_app_cache=app,a3_system_cache=system)
+            payload, _ = mkpayload.build(args.kernel, tree, "rd=a3auto", ram, a3_static_cache=cache, **extra)
     test = TrustFixture(args.kernel, payload, component, baseline)
     spec = importlib.util.spec_from_file_location("a3_boot_regression", TOOLS / "a3-boot-regression.py")
     regression = importlib.util.module_from_spec(spec)
@@ -300,7 +367,8 @@ def run():
     regression.policy_lifecycle(kernel, trust_fixture=test)
     return 3 if ((args.require_lookup and not test.lookup_ready) or
                  (args.require_platform_policy and not test.platform_ready) or
-                 (args.require_sandbox_policy and not test.sandbox_ready)) else 0
+                 (args.require_sandbox_policy and not test.sandbox_ready) or
+                 (args.require_cryptex_policy and not test.cryptex_ready)) else 0
 
 
 if __name__ == "__main__":

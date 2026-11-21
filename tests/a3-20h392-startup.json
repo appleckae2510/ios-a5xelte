@@ -74,5 +74,16 @@
       "category": 1,
       "codesign_strict_ok": false
     }
+  ],
+  "cryptex_files": [
+    {
+      "path": "/System/Cryptexes/App/usr/libexec/webbookmarksd",
+      "cdhash": "b0a439a33ae99ae3ca1bc102fe61802394582d36",
+      "hash_type": 2,
+      "constraint_category": 1,
+      "arm64_sha256": "17805387dcc42b957efae50cd0013b12c1105cf8842f830e29946c21719294ff",
+      "code_pages_verified": 38,
+      "module": "Cryptex1,AppTrustCache"
+    }
   ]
 }

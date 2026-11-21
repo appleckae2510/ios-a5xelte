@@ -1063,3 +1063,44 @@ USERDATA remains writable. BOOT-only rollback cannot undo volume writes.
 No phone flash or physical storage write performed here.
 SpringBoard, working physical touch, camera, WLAN, BT, audio and modem
 remain unverified. Unknown future panics cannot be ruled out.
+
+
+## 2026-11-21 — original Cryptex caches, v0.14 work in progress
+
+New photo: userspace panic "unexpected exec of non-platform binary"
+/System/Cryptexes/App/usr/libexec/webbookmarksd, PID315. Framebuffer reports
+copy/swap frames (~12.5 fps); this is not proof of SpringBoard or a complete
+GUI. v0.13 has progressed to further userland but a physical flashed-image
+digest is not shown.
+
+The original d21ap 20H392 AppOS component (10MiB APFS) was downloaded by
+exact IPSW byte range and verified with CRC/length and SHA384 from the
+BuildManifest. Original ARM64 webbookmarksd slice verified all 38 signed
+code-page hashes. CodeDirectory hash b0a439a33ae99ae3ca1bc102fe61802394582d36,
+hash type2, original App-cache constraint category1. ARM64 SHA256
+17805387dcc42b957efae50cd0013b12c1105cf8842f830e29946c21719294ff.
+It is absent from the existing 2754-entry root cache and present in the
+separate 30-entry App Cryptex cache. No arbitrary platform flag is justified.
+
+Patch 0410 adds the original 30 App and 61 Cryptex-System entries, preserving
+both original module bytes/UUIDs/types/constraints. The packer authenticates
+both IM4P components against the d21ap Erase BuildManifest fingerprints and
+places their 2244-byte canonical two-module table in an A3 ADT property.
+The native kernel checks ADT bounds, hashes the entire fixed table and
+copies it to protected pre-lockdown memory. Original root-cache layout is
+unchanged. Native identity lookup tries root then the two Cryptex modules.
+Only original Cryptex identities may additionally use a non-root read-only
+mount; unrelated writable mounts and wrong hashes/types still fail.
+The existing Sandbox stock-process gate consequently covers those genuine
+Cryptex programs too. This does not implement the global Image4/AMFI API.
+
+Additional regression requires the exact Cryptex modules, rejects altered
+constraints, checks all 91 original records and mount scope, and explicitly
+covers the audited original webbookmarksd platform/Sandbox identity.
+The old v0.13 kernel/profile fails the new requirement (exit3) and refuses
+that App identity without its module. Host-C checks and patch/Python
+preflight passed. Next: native CI build and final whole-image tests.
+No v0.14 image released yet. Existing development cache-signature skip and
+-no_corpses remain disclosed. Actual successful iOS boot remains unverified.
+
+Downloaded Apple components/binaries remain private and outside git.

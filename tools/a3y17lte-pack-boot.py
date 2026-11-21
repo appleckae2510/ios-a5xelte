@@ -70,6 +70,8 @@ def main():
     p.add_argument('--ramdisk', type=Path, help='optional md0 image (HFS volume or mockfs test executable)')
     p.add_argument('--a3-static-cache', type=Path, metavar='20H392-IM4P',
                    help='pass the original d21ap 20H392 static trust cache to XNU')
+    p.add_argument('--a3-cryptex-app-cache', type=Path, help='original d21ap 20H392 Cryptex App trust cache')
+    p.add_argument('--a3-cryptex-system-cache', type=Path, help='original d21ap 20H392 Cryptex System trust cache')
     p.add_argument('--product-adt', type=Path, help='matching Apple product metadata from the root build')
     p.add_argument('--ios-root', action='store_true',
                    help='boot a separately installed HFSX iOS root from USERDATA with writes inside that partition')
@@ -101,6 +103,10 @@ def main():
         p.error('--development-launchd-cache requires --combined --writable-userdata --a3-static-cache')
     if a.disable_crash_snapshots and not a.development_launchd_cache:
         p.error('--disable-crash-snapshots requires --development-launchd-cache')
+    if (a.a3_cryptex_app_cache is None) != (a.a3_cryptex_system_cache is None):
+        p.error('both Cryptex cache components are required')
+    if a.a3_cryptex_app_cache and not a.a3_static_cache:
+        p.error('Cryptex caches require --a3-static-cache')
     if not a.allow_unverified_handoff:
         p.error('Review the handoff for this image and pass --allow-unverified-handoff to build it.')
     with zipfile.ZipFile(a.evidence) as z:
@@ -124,6 +130,8 @@ def main():
         raise ValueError('Combined boot needs the A3 kernel with patch 0404')
     if a.writable_userdata and b'A3 USERDATA: validated writable root' not in kernel:
         raise ValueError('Writable combined boot requires the A3 mount-update kernel')
+    if a.a3_cryptex_app_cache and b'A3 Cryptex caches: verified 20H392' not in kernel:
+        raise ValueError('Cryptex cache handoff requires the A3 Cryptex-aware kernel')
     if a.ios_root and b'A3Y17LTE_USERDATA_RW_V1' not in kernel:
         raise ValueError('USERDATA root needs the A3 kernel with patch 0402')
     m = mkpayload.parse_macho(kernel)
@@ -166,7 +174,8 @@ def main():
         tree_path.write_bytes(adt.serialize(board.build(a.product_adt)))
         payload, info = mkpayload.build(str(a.kernel), str(tree_path), cmdline,
                                         str(a.ramdisk) if a.ramdisk else None,
-                                        a3_static_cache=a.a3_static_cache)
+                                        a3_static_cache=a.a3_static_cache, a3_app_cache=a.a3_cryptex_app_cache,
+                                        a3_system_cache=a.a3_cryptex_system_cache)
     crc = zlib.crc32(payload)
     combined = (bytearray(loader.ljust(0x4000, b'\0')) + b'A3XNPAY2' +
                 struct.pack('<II', len(payload), crc) + payload)
@@ -189,6 +198,7 @@ def main():
         if a.writable_userdata:
             stage = 'COMBINED USERDATA READ-WRITE BOOT'
     report = {'target': 'a3y17lte', 'stage': stage, 'phone_boot_tested': False,
+              'original_cryptex_caches_included': bool(a.a3_cryptex_app_cache),
               'crash_snapshots_disabled': a.disable_crash_snapshots,
               'development_launchd_cache': a.development_launchd_cache,
               'launchd_job_cache_signature_check_skipped': a.development_launchd_cache,

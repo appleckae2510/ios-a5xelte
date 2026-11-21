@@ -1,0 +1,112 @@
+--- a/bsd/kern/a3_boot_cache.inc
++++ b/bsd/kern/a3_boot_cache.inc
+@@ -36,6 +36,73 @@
+ 	0x3c, 0x1c, 0x75, 0x55, 0x9a, 0xbf, 0xa9, 0x7e, 0xbc, 0x14, 0xb3, 0x35,
+ };
+ 
++/* Original Cryptex App/System modules, separately pinned to 20H392. */
++enum { A3_CRYPTEX_BYTES = 2244 };
++struct a3_cryptex_table {
++    uint32_t count;
++    uint32_t offsets[2];
++    uint8_t data[A3_CRYPTEX_BYTES - 12];
++};
++struct a3_cryptex_header { uint32_t version; uint8_t uuid[16]; uint32_t count; };
++_Static_assert(sizeof(struct a3_cryptex_table) == A3_CRYPTEX_BYTES, "20H392 Cryptex layout");
++SECURITY_READ_ONLY_LATE(static struct a3_cryptex_table) a3_measured_cryptex;
++SECURITY_READ_ONLY_LATE(static bool) a3_cryptex_ready;
++static const uint8_t a3_cryptex_digest[48] = { 0x12,0x54,0x20,0xed,0x05,0xe4,0x48,0x18,0xae,0xfa,0x99,0x81,0x9d,0xfc,0x85,0x58,0x07,0x15,0x63,0xca,0xe9,0x69,0x8c,0x40,0xec,0x5b,0x66,0x3f,0x2e,0x21,0x50,0xf8,0xa4,0x5b,0x7e,0x3e,0x6c,0x6d,0x54,0xa6,0x3c,0xc6,0xa0,0xf1,0xe4,0x1d,0x83,0xd1 };
++
++static __attribute__((noinline)) void
++a3_measure_cryptex_cache(void)
++{
++    const boot_args *args = PE_state.bootArgs;
++    DTEntry root = NULL;
++    const void *value = NULL;
++    unsigned int size = 0;
++    SHA384_CTX ctx;
++    uint8_t digest[48];
++    if (args == NULL || a3_cryptex_ready || startup_phase >= STARTUP_SUB_LOCKDOWN ||
++        SecureDTLookupEntry(NULL, "/", &root) != kSuccess ||
++        SecureDTGetProperty(root, "a3-cryptex-trustcache", &value, &size) != kSuccess ||
++        size != sizeof(a3_measured_cryptex)) {
++        return;
++    }
++    uintptr_t tree = (uintptr_t)args->deviceTreeP, property = (uintptr_t)value;
++    if (property < tree || property - tree > args->deviceTreeLength ||
++        size > args->deviceTreeLength - (property - tree)) {
++        return;
++    }
++    memcpy(&a3_measured_cryptex, value, size);
++    SHA384_Init(&ctx);
++    SHA384_Update(&ctx, &a3_measured_cryptex, sizeof(a3_measured_cryptex));
++    SHA384_Final(digest, &ctx);
++    if (memcmp(digest, a3_cryptex_digest, sizeof(digest)) != 0 ||
++        a3_measured_cryptex.count != 2 || a3_measured_cryptex.offsets[0] != 12 ||
++        a3_measured_cryptex.offsets[1] != 756) {
++        bzero(&a3_measured_cryptex, sizeof(a3_measured_cryptex));
++        printf("A3 Cryptex caches: release fingerprint mismatch\n");
++        return;
++    }
++    a3_cryptex_ready = true;
++    printf("A3 Cryptex caches: verified 20H392, App 30 + System 61 identities\n");
++}
++
++static __attribute__((noinline)) const TrustCacheEntry2_t *
++a3_cryptex_identity(const uint8_t *cdhash)
++{
++    if (!a3_cryptex_ready || cdhash == NULL) return NULL;
++    const uint8_t *base = (const void *)&a3_measured_cryptex;
++    for (unsigned int module = 0; module < 2; module++) {
++        const struct a3_cryptex_header *header = (const void *)(base + a3_measured_cryptex.offsets[module]);
++        const TrustCacheEntry2_t *entries = (const void *)(header + 1);
++        unsigned int low = 0, high = header->count;
++        while (low < high) {
++            unsigned int mid = low + (high - low) / 2;
++            int cmp = memcmp(cdhash, entries[mid].CDHash, sizeof(entries[mid].CDHash));
++            if (cmp == 0) return &entries[mid];
++            if (cmp < 0) high = mid; else low = mid + 1;
++        }
++    }
++    return NULL;
++}
++
+ static __attribute__((noinline)) void
+ a3_measure_boot_cache(void)
+ {
+@@ -97,6 +164,7 @@
+ 		return;
+ 	}
+ 	a3_measured_ready = true;
++	a3_measure_cryptex_cache();
+ 	printf("A3 stock cache: verified 20H392, %u identities\n", a3_measured_module.count);
+ }
+ 
+@@ -120,7 +188,7 @@
+ 			low = mid + 1;
+ 		}
+ 	}
+-	return NULL;
++	return a3_cryptex_identity(cdhash);
+ }
+ 
+ /* A CodeDirectory hash identifies its signed code-page hashes and
+@@ -133,7 +201,8 @@
+ 	/* The normal iOS mount task upgrades the root to read-write. Trust
+ 	 * remains tied to the pinned CodeDirectory and its validated code pages,
+ 	 * regardless of the mount's current read-only flag. */
+-	if ((mount_flags & MNT_ROOTFS) == 0) {
++	if ((mount_flags & MNT_ROOTFS) == 0 &&
++            ((mount_flags & MNT_RDONLY) == 0 || a3_cryptex_identity(cdhash) == NULL)) {
+ 		return cs_flags;
+ 	}
+ 	const TrustCacheEntry2_t *entry = a3_measured_identity(cdhash);
+@@ -154,7 +223,7 @@
+ 	if (name == NULL) {
+ 		return;
+ 	}
+-	if (strcmp(name, "fsck") == 0 || strcmp(name, "launchd") == 0 || strcmp(name, "mount") == 0) {
++	if (strcmp(name, "fsck") == 0 || strcmp(name, "launchd") == 0 || strcmp(name, "mount") == 0 || strcmp(name, "webbookmarksd") == 0) {
+ 		const TrustCacheEntry2_t *entry = a3_measured_identity(cdhash);
+ 		printf("A3 stock identity %s: match=%d category=%d platform=%d\n", name,
+ 		    entry != NULL, entry != NULL ? entry->constraintCategory : -1, platform_binary);

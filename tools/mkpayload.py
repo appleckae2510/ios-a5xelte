@@ -153,6 +153,38 @@ def a3_release_cache(component):
     return struct.pack('<II', 1, 8) + module
 
 
+A3_CRYPTEX_TABLE_SHA384 = '125420ed05e44818aefa99819dfc8558071563cae9698c40ec5b663f2e2150f8a45b7e3e6c6d54a63cc6a0f1e41d83d1'
+
+
+def a3_cryptex_release_cache(app_component, system_component):
+    """Keep the original App/System Cryptex modules, authenticated to 20H392."""
+    modules = []
+    for component, digest, count in (
+        (app_component, 'a58d8b89f43b8f0eeb097dc554df95def3ea62692b3bd9b0aeda2b710a1203815f829f56ef14e1c993245c130247f0ca', 30),
+        (system_component, '204e476a45650adde5bedb65ff93af211cb5f2c0e20ec8ae274025df5017a988d598512846b9115cd5c77ac5ebcc08e1', 61),
+    ):
+        if hashlib.sha384(component).hexdigest() != digest:
+            raise ValueError('Cryptex trust cache differs from original d21ap 20H392')
+        module, info = adt.im4p_payload(component)
+        if info['type'] != 'trst' or info['encrypted'] or len(module) != 24 + count*24 or struct.unpack_from('<I16xI',module) != (2,count):
+            raise ValueError('unexpected 20H392 Cryptex module')
+        modules.append(module)
+    table = struct.pack('<3I', 2, 12, 12+len(modules[0])) + b''.join(modules)
+    if hashlib.sha384(table).hexdigest() != A3_CRYPTEX_TABLE_SHA384:
+        raise ValueError('Cryptex module layout differs')
+    return table
+
+
+def add_a3_cryptex_cache(adt_blob, app_component, system_component):
+    root, end = adt.parse(adt_blob)
+    if end != len(adt_blob) or b'samsung,a3y17lte' not in (root.prop('compatible') or b'').split(b'\0'):
+        raise ValueError('Cryptex handoff requires an A3 tree')
+    if root.prop('a3-cryptex-trustcache') is not None:
+        raise ValueError('duplicate Cryptex property')
+    root.props.append(('a3-cryptex-trustcache', 0, a3_cryptex_release_cache(app_component, system_component)))
+    return adt.serialize(root)
+
+
 def adt_dram(adt_blob):
     """Kernel-managed RAM <base, size> from the ADT's /chosen dram-base/dram-size."""
     root, _ = adt.parse(adt_blob)
@@ -161,7 +193,7 @@ def adt_dram(adt_blob):
             struct.unpack('<Q', chosen.prop('dram-size'))[0])
 
 
-def build(kernel_path, adt_path, cmdline, ramdisk_path=None, *, a3_static_cache=None):
+def build(kernel_path, adt_path, cmdline, ramdisk_path=None, *, a3_static_cache=None, a3_app_cache=None, a3_system_cache=None):
     buf = bytearray(open(kernel_path, 'rb').read())
     m = parse_macho(buf)
     nfix = apply_chained_fixups(buf, m)
@@ -176,6 +208,12 @@ def build(kernel_path, adt_path, cmdline, ramdisk_path=None, *, a3_static_cache=
 
     adt_blob = open(adt_path, 'rb').read()
     # The ADT decides where the kernel's RAM is (mkadt.py --highmem).
+    if (a3_app_cache is None) != (a3_system_cache is None):
+        raise ValueError('both original Cryptex components are required')
+    if a3_app_cache is not None:
+        if a3_static_cache is None:
+            raise ValueError('Cryptex caches require the original static cache')
+        adt_blob = add_a3_cryptex_cache(adt_blob, Path(a3_app_cache).read_bytes(), Path(a3_system_cache).read_bytes())
     PHYS_BASE, MEM_SIZE = adt_dram(adt_blob)
     pieces = [(s['vmaddr'], s['vmsize'], buf[s['fileoff']:s['fileoff'] + s['filesize']]) for s in segs]
     ramdisk = None
@@ -226,6 +264,9 @@ def build(kernel_path, adt_path, cmdline, ramdisk_path=None, *, a3_static_cache=
                 segs=[(s['name'], hex(s['vmaddr']), hex(s['vmsize'])) for s in segs])
     if a3_static_cache is not None:
         info['static_cache'] = dict(build='20H392', physical_address=hex(table_pa), byte_length=len(table))
+    if a3_app_cache is not None:
+        info['cryptex_cache'] = dict(build='20H392', app_entries=30, system_entries=61,
+                                    handoff='a3-cryptex-trustcache ADT property', byte_length=2244)
     return bytes(out), info
 
 

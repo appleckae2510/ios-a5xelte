@@ -17,7 +17,7 @@ def prepare(root, board):
     cmd = ["git", "apply", "--whitespace=nowarn"]
     env = {**os.environ, "GIT_CEILING_DIRECTORIES": str(root.parent)}
     for name in ("0405-static-mac-lifetime.patch", "0406-verified-boot-cache-measurement.patch",
-                 "0407-stock-boot-platform-policy.patch", "0408-a3-userdata-mount-update.patch", "0409-a3-stock-sandbox-compat.patch"):
+                 "0407-stock-boot-platform-policy.patch", "0408-a3-userdata-mount-update.patch", "0409-a3-stock-sandbox-compat.patch", "0410-a3-original-cryptex-caches.patch"):
         patch = (board.parent / "native" / name).resolve()
         applied = subprocess.run(cmd + ["--reverse", "--check", str(patch)], cwd=root,
                                  env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
