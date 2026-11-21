@@ -1,152 +1,89 @@
-# A3Y17LTE active handoff — 2026-11-21, BOOT v0.12 DEV
+# A3Y17LTE active handoff — 2026-11-21, BOOT v0.13 DEV delivered
 
-Latest real-device photo: launchd_cache_loader[23] aborts with namespace 7,
-subcode 1, "Unable to find AMFI". Earlier tzinit/PRNG boot tasks ran. The
-previous mount-phase-1 read-only failure is no longer visible. The photo
-does not contain an image digest, so it cannot prove a specific flashed hash.
-This is further startup progress, not SpringBoard or successful full boot.
+The user's 291.633-second video is inspected. At about 01:05 it shows
+"Using unsecure cache" and "Cache sent to launchd successfully": the earlier
+AMFI cache-loader abort is passed. At about 02:10-02:25 the bounded
+backboardd heap-string diagnostic contains "Failed at lookup with error 159
+- Sandbox restriction" and NSInvalidArgumentException, NSURL
+initFileURLWithPath: nil string parameter. These are diagnostic strings in
+the failed process, not a complete execution trace proving all causality.
+The donor A5XELTE notes localize the same exception to a missing system-
+container path. Current native code lacked the named Sandbox policy.
+Repeated mediaserverd SIGSEGV and a later Jetsam no-victim panic were shown
+in earlier stills. No full GUI boot is shown and photos/video carry no hash.
 
-Native A3BootIdentity validates pinned original program identities; it does
-not implement the AppleMobileFileIntegrity IOKit service that cache_loader
-looks up (IOServiceOpen type 0, external method selector 6). Renaming the
-MAC policy would not provide that service. Donor notes document the exact
-same 20H392 failure and the launchd_unsecure_cache=1 development boot path.
+NEW NATIVE KERNEL BUILT:
+Source 733bb3fa12f8190c22ce65b44022d820f257b83e
+CI https://github.com/appleckae2510/ios-a5xelte/actions/runs/44911647525
+Native build job 136868551923 and qualification job 136870893429 succeeded.
+Artifact 14710019103 (kernel ZIP digest
+b917c8486039cc4ee9a13cbf07d89bbedecd56aaa90aa16e319bb298a4eb9599).
+Kernel 17599616 bytes, SHA256:
+417bd37280dfec9d29902e7ab3668f02d762e5f36fb7435bf94c881a5b24d4a0
+First attempt 45d877e59508086ed3309ad8f63af3ae83dae22e / run 44910801670
+failed compilation because PROC_NULL is not defined in this native TU.
+733bb3 replaces that sentinel with NULL. Failed artifact was not released.
 
-A new explicit --development-launchd-cache packer option appends only this
-argument and requires combined + writable-userdata + the pinned static
-cache. IMPORTANT: this intentionally SKIPS launchd job-cache signature and
-AMFI validation. It is a development workaround, not a completed AMFI
-implementation, not a secure production boot, and not a guarantee of a GUI.
-Ordinary profiles do not enable it. No Apple executable is patched.
-Normal native program-identity checks have not been globally disabled.
-No personal/confidential data should be used on this development system.
+Patch 0409 registers a named Sandbox compatibility policy before lockdown
+with readonly config and handle. It only accepts measured original 20H392
+identities with their original hash type and current platform status.
+Init/check/note/bulk-check operations succeed for these original programs;
+paths and extension operations return ENOENT without fabricated data,
+unsupported operations return ENOPOLICY, and unknown/non-platform identities
+return EPERM. Only PRIV_WORK_INTERVAL is grantable under the same stock gate.
+This is NOT a complete Seatbelt engine. Original entitlements are unchanged.
+No new blanket entitlement or CPU-monitor exemption was added.
+Missing-container-path, media and graphical startup still require hardware
+verification; do not claim every userland fault is fixed.
 
-Packer source commit 836bbde6b3a7d2a033573bae35034c8ba257d340.
-No kernel rebuild was needed; the native kernel and GCC loader are
-byte-identical to delivered v0.11:
-kernel source eae451d7b62368a29e63fdb51bec4bee5ab13c07
-CI https://github.com/appleckae2510/ios-a5xelte/actions/runs/44893326915
-kernel SHA256 98c155df91e9032a3901e9a587def241fb382c7d3aef8dd52cb3d700a988e953
-loader source 8db4823ae09f4cf3ee7e667a5971a2508c8f83c4
-loader SHA256 38dfe5c7ce6636b99fec60d51370d0124db6082108d0fd64b270610f342587b6
+Explicit --disable-crash-snapshots adds native -no_corpses only with the
+development cache profile. The real linked kernel tunable initializer and
+corpses_enabled were replayed: without flag 1, with shipped command 0.
+This reduces retained crash snapshots, does NOT hide daemon failures or the
+Jetsam panic, and is not proof that all memory pressure is resolved.
+launchd_unsecure_cache=1 remains active and still skips launchd job-cache
+signature/AMFI validation. No complete AMFI IOKit or Image4 service is supplied.
 
-A3-A320FL-BOOT-v0.12-DEV.img, 27250704 bytes, SHA256:
-9e0fc737985b665811097af51b91095134bb74096e1686e3334684b85b53a3aa
-Passed on exact packed bytes: 11 full loader starts, 20 joint hardware/root
-cases, original kernel policy/cache qualification (10 identities, 32 negative
-controls), payload CRC32 and exact segment comparison. Profile comparison
-normalizes only the expected fresh 64-byte random seed; otherwise all load
-segments, ADT data, md0 and original static cache remain unchanged and only
-the command line gains launchd_unsecure_cache=1. Three incomplete development
-profile combinations are rejected. The unchanged kernel/loader retain their
-previously completed 9 native write, 6 journal-profile and 50 loader cases.
-Tests do NOT execute Apple's launchd_cache_loader. Its development branch
-on this A3 remains a physical-device test, as does all subsequent userland.
-Global Image4 static trust-cache API remains unsupported.
+Exact final image A3-A320FL-BOOT-v0.13-DEV.img, 27250704 bytes, SHA256:
+4158bb293e44ac9f6daabf762c5b4029c893c3d7f07b2b4d298f021bb83cd53a
+Same validated GCC loader from 8db4823ae09f4cf3ee7e667a5971a2508c8f83c4,
+loader SHA256 38dfe5c7ce6636b99fec60d51370d0124db6082108d0fd64b270610f342587b6.
+Payload remains A3XNPAY2 with CRC32, exact diagnostic RAM volume retained.
 
-Delivered Galaxy-A3-A320FL-BOOT-v0.12-DEV-Windows.zip:
-14872915 bytes, 44 files, SHA256:
-aebed4be952a09ed3320ec95bf906f3a3a880cbf86e1f24609116160fe2e4b0c
-Library ID libfile_aa903e021a308191b64a0a7c251bcb7b.
-Package contains image, matching symbols/loader, source, checksums,
-test reports and German installation/security-limit instructions.
-Windows checker remains physically untested.
+PASSED ON FINAL BYTES:
+11 loader trials, 20 combined hardware/root-selection cases, 9 native
+bounded USERDATA-write cases; native startup/MAC sealing and original
+cache/boot identities (10 originals, 32 negative controls); 144 native
+Sandbox identity/operation cases plus null-process rejection; two actual
+named MAC syscall dispatch cases; two actual native corpse-tunable cases.
+The old kernel fails the new Sandbox requirement and returns ENOPOLICY for
+the actual named Sandbox syscall; the new finds it and rejects the deliberately
+null process with EPERM. Copying user strings and audit context are modeled.
+Positive stock identity decisions are tested on the actual native decision
+helper, NOT on a complete live process/credential simulation.
+Host-C check also ran the exact new helper against all 2754 cache entries
+and invalid-type/non-platform/unknown-op controls. The exact unchanged
+loader retains its 50-case regression; 6 journal-profile checks unchanged.
+No test executes Apple's full launchd/backboardd or native device hardware.
 
-NEXT: user backs up BOOT and full USERDATA (or retains full original root
-image), flashes only v0.12 DEV to Boot in TWRP, reports cache-loader
-"Using unsecure cache" or the next complete panic and preceding lines.
-USERDATA remains writable during boot. BOOT-only rollback cannot undo root
-volume writes. No physical flash or phone writes were performed here.
-SpringBoard and touch/camera/WLAN/BT/audio/modem remain unverified.
+DELIVERED Galaxy-A3-A320FL-BOOT-v0.13-DEV-Windows.zip
+14887928 bytes, 53 files, SHA256:
+a19a0a15cdd218c1a965dcdc61784804c5d53cd01b152542057fbaf48c8ef995
+Library ID libfile_bdbaaa6d391c81919ae6032f20908d88
+Includes image, matching kernel/loader, source, replay helpers, complete
+file checksums and German TWRP/Windows instructions and explicit limits.
+ZIP CRC, membership, all member lengths/SHA256 were verified.
+The PowerShell checker has not been run on real Windows.
 
-Primary evidence:
-https://github.com/dipa-studio/ios-sweet/blob/main/NOTES.md
-Entries for boots 0038e and 0039u, same 20H392 release. Reddit r/hackios was
-also searched explicitly at the user's request; no direct verified exact
-fix was found, and direct Reddit search could not be fetched. Do not label
-this workaround a Reddit-verified A3 fix.
-
-
-## Device evidence after v0.12 DEV — 2026-11-21
-
-New user photos show repeating USERSPACE crashes, then a later genuine kernel
-panic. backboardd SIGABRT (signal 6, reason ns 2/code 6); mediaserverd SIGSEGV
-(signal 11, code 0x100000001, FAR 0). Shared-cache slide 0x0534c000.
-mediaserverd PC 0x18c1aa0cc, LR 0x19ae29f30; backboardd PC 0x1c7963198,
-LR 0x1d6ef25f8. backboardd main-image return offsets repeatedly include
-+0x9334 (e.g. mh 0x1007cc000, return 0x1007d5334), matching the donor's
-window-server startup wrapper. This similarity does not identify the
-specific exception reason or prove that the display driver is the cause.
-
-HID logs show SweetHIDTouch and SweetHIDButtons opened by
-IOHIDEventServiceUserClient. This confirms userland opening those services,
-not working physical touch or a rendered screen. No SpringBoard frame shown.
-
-Later photo: "memorystatus_jetsam_thread: no victim! available pages:5693
-@kern_memorystatus.c:4138", after Too many corpses and EXC_CORPSE_NOTIFY
-send failures -308. Source review at the matching XNU tree shows this path
-already attempts memorystatus_dump_caches(true) before panicking on remaining
-critical memory pressure. Do NOT assert that uncollected corpses alone cause
-the panic, or disable the Jetsam panic to present a false successful boot.
-
-Native A3 policy still has only A3BootIdentity; the donor's named Sandbox
-compatibility policy is not registered on this native path. The donor
-records denied XPC lookups from missing Sandbox as a backboardd dependency.
-This is a candidate native compatibility defect, not yet a measured cause
-of this phone's specific SIGABRT. The CPU-monitor entitlement warning on
-mediaserverd does not itself establish why it dereferences NULL.
-Do not globally grant new entitlements based on that warning.
-
-Existing diagnostics: Sweet crash-string scan defaults to backboardd and
-SpringBoard and is limited to the first four scans on A5XELTE; matching IOKit
-trace is also bounded. The later user photos omit the early diagnostic lines.
-NEXT REQUIRED EVIDENCE: record a video from boot through the FIRST backboardd
-crash, including STR/IOK lines and the preceding error. Full kernel log or
-symbolication with the exact 20H392 shared cache would be preferable.
-A3 has no established working live-log/USB link in this session. Do not claim
-ADB logcat works in this native XNU boot or flash another device's drivers.
-
-Apple XNU has a native -no_corpses development flag (corpse.c:159,
-corpses_enabled returns !corpses_disabled). It can reduce crash-dump retention
-but does not repair either service and does not guarantee avoiding Jetsam.
-It has NOT been added to the delivered BOOT or tested on the phone.
-No v0.13 image or new kernel is built in this diagnostic milestone.
-Current delivery remains v0.12 DEV with its explicitly disclosed cache
-signature-check skip. No physical phone write performed.
-
-
-
-## Video milestone — 2026-11-21, v0.13 work in progress
-
-The supplied 291.633 s boot video confirms "Using unsecure cache" and "Cache
-sent to launchd successfully" around 01:05. Around 02:10-02:20 the first
-backboardd heap diagnostics show "Failed at lookup with error 159 - Sandbox
-restriction" and "NSInvalidArgumentException ... NSURL initFileURLWithPath:
-nil string parameter". Unlike the earlier stills this directly establishes
-a failed Sandbox lookup in the process immediately preceding its failure.
-The missing container path is the immediate exception; whether the next
-lookup succeeds on the A3 still needs a real-device boot. The media process
-SIGSEGV and eventual Jetsam exhaustion are separate effects still to verify.
-
-Prepared native patch 0409 registers a named Sandbox compatibility policy
-before lockdown, with sealed config and handle. It permits init/check/note/
-bulk-check operations only for pinned original 20H392 platform binaries.
-Path/extension requests return ENOENT; unknown operations return ENOPOLICY;
-unknown hashes, wrong hash type or non-platform processes return EPERM.
-Only PRIV_WORK_INTERVAL can be granted, under the same stock-process gate.
-No arbitrary entitlements, container paths or extension tokens are invented.
-This is a restricted development compatibility policy, NOT a Seatbelt engine.
-
-New explicit packer option --disable-crash-snapshots adds Apple's existing
--no_corpses flag only to the development profile. It reduces retained crash
-snapshots, does not suppress process crashes or the Jetsam panic and does
-not by itself fix memory pressure. Existing launchd cache signature-check
-skip remains explicitly disclosed. Userland and actual storage are untested.
-
-The new native regression requires the Sandbox policy; v0.12 kernel fails
-this added requirement with exit 3 while retaining its passing original
-identity tests. Local Python syntax and patch application preflight pass.
-Next: CI compilation and native/whole-image regressions. No v0.13 release yet.
+NEXT DEVICE TRIAL:
+User backs up BOOT and full USERDATA (or retains original full iOS root
+image), flashes ONLY this IMG to Boot in TWRP, records boot. Look for
+"A3 stock Sandbox compatibility registered before lockdown" and
+"A3 Sandbox: ... op 2 -> 0", then the first complete error or real GUI.
+USERDATA remains writable. BOOT-only rollback cannot undo volume writes.
+No phone flash or physical storage write performed here.
+SpringBoard, working physical touch, camera, WLAN, BT, audio and modem
+remain unverified. Unknown future panics cannot be ruled out.
 
 ---
 

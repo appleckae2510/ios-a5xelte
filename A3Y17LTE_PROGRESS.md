@@ -975,3 +975,91 @@ The new native regression requires the Sandbox policy; v0.12 kernel fails
 this added requirement with exit 3 while retaining its passing original
 identity tests. Local Python syntax and patch application preflight pass.
 Next: CI compilation and native/whole-image regressions. No v0.13 release yet.
+
+
+## 2026-11-21 — BOOT v0.13 DEV native Sandbox compatibility and corpse control
+
+The user's 291.633-second video is inspected. At about 01:05 it shows
+"Using unsecure cache" and "Cache sent to launchd successfully": the earlier
+AMFI cache-loader abort is passed. At about 02:10-02:25 the bounded
+backboardd heap-string diagnostic contains "Failed at lookup with error 159
+- Sandbox restriction" and NSInvalidArgumentException, NSURL
+initFileURLWithPath: nil string parameter. These are diagnostic strings in
+the failed process, not a complete execution trace proving all causality.
+The donor A5XELTE notes localize the same exception to a missing system-
+container path. Current native code lacked the named Sandbox policy.
+Repeated mediaserverd SIGSEGV and a later Jetsam no-victim panic were shown
+in earlier stills. No full GUI boot is shown and photos/video carry no hash.
+
+NEW NATIVE KERNEL BUILT:
+Source 733bb3fa12f8190c22ce65b44022d820f257b83e
+CI https://github.com/appleckae2510/ios-a5xelte/actions/runs/44911647525
+Native build job 136868551923 and qualification job 136870893429 succeeded.
+Artifact 14710019103 (kernel ZIP digest
+b917c8486039cc4ee9a13cbf07d89bbedecd56aaa90aa16e319bb298a4eb9599).
+Kernel 17599616 bytes, SHA256:
+417bd37280dfec9d29902e7ab3668f02d762e5f36fb7435bf94c881a5b24d4a0
+First attempt 45d877e59508086ed3309ad8f63af3ae83dae22e / run 44910801670
+failed compilation because PROC_NULL is not defined in this native TU.
+733bb3 replaces that sentinel with NULL. Failed artifact was not released.
+
+Patch 0409 registers a named Sandbox compatibility policy before lockdown
+with readonly config and handle. It only accepts measured original 20H392
+identities with their original hash type and current platform status.
+Init/check/note/bulk-check operations succeed for these original programs;
+paths and extension operations return ENOENT without fabricated data,
+unsupported operations return ENOPOLICY, and unknown/non-platform identities
+return EPERM. Only PRIV_WORK_INTERVAL is grantable under the same stock gate.
+This is NOT a complete Seatbelt engine. Original entitlements are unchanged.
+No new blanket entitlement or CPU-monitor exemption was added.
+Missing-container-path, media and graphical startup still require hardware
+verification; do not claim every userland fault is fixed.
+
+Explicit --disable-crash-snapshots adds native -no_corpses only with the
+development cache profile. The real linked kernel tunable initializer and
+corpses_enabled were replayed: without flag 1, with shipped command 0.
+This reduces retained crash snapshots, does NOT hide daemon failures or the
+Jetsam panic, and is not proof that all memory pressure is resolved.
+launchd_unsecure_cache=1 remains active and still skips launchd job-cache
+signature/AMFI validation. No complete AMFI IOKit or Image4 service is supplied.
+
+Exact final image A3-A320FL-BOOT-v0.13-DEV.img, 27250704 bytes, SHA256:
+4158bb293e44ac9f6daabf762c5b4029c893c3d7f07b2b4d298f021bb83cd53a
+Same validated GCC loader from 8db4823ae09f4cf3ee7e667a5971a2508c8f83c4,
+loader SHA256 38dfe5c7ce6636b99fec60d51370d0124db6082108d0fd64b270610f342587b6.
+Payload remains A3XNPAY2 with CRC32, exact diagnostic RAM volume retained.
+
+PASSED ON FINAL BYTES:
+11 loader trials, 20 combined hardware/root-selection cases, 9 native
+bounded USERDATA-write cases; native startup/MAC sealing and original
+cache/boot identities (10 originals, 32 negative controls); 144 native
+Sandbox identity/operation cases plus null-process rejection; two actual
+named MAC syscall dispatch cases; two actual native corpse-tunable cases.
+The old kernel fails the new Sandbox requirement and returns ENOPOLICY for
+the actual named Sandbox syscall; the new finds it and rejects the deliberately
+null process with EPERM. Copying user strings and audit context are modeled.
+Positive stock identity decisions are tested on the actual native decision
+helper, NOT on a complete live process/credential simulation.
+Host-C check also ran the exact new helper against all 2754 cache entries
+and invalid-type/non-platform/unknown-op controls. The exact unchanged
+loader retains its 50-case regression; 6 journal-profile checks unchanged.
+No test executes Apple's full launchd/backboardd or native device hardware.
+
+DELIVERED Galaxy-A3-A320FL-BOOT-v0.13-DEV-Windows.zip
+14887928 bytes, 53 files, SHA256:
+a19a0a15cdd218c1a965dcdc61784804c5d53cd01b152542057fbaf48c8ef995
+Library ID libfile_bdbaaa6d391c81919ae6032f20908d88
+Includes image, matching kernel/loader, source, replay helpers, complete
+file checksums and German TWRP/Windows instructions and explicit limits.
+ZIP CRC, membership, all member lengths/SHA256 were verified.
+The PowerShell checker has not been run on real Windows.
+
+NEXT DEVICE TRIAL:
+User backs up BOOT and full USERDATA (or retains original full iOS root
+image), flashes ONLY this IMG to Boot in TWRP, records boot. Look for
+"A3 stock Sandbox compatibility registered before lockdown" and
+"A3 Sandbox: ... op 2 -> 0", then the first complete error or real GUI.
+USERDATA remains writable. BOOT-only rollback cannot undo volume writes.
+No phone flash or physical storage write performed here.
+SpringBoard, working physical touch, camera, WLAN, BT, audio and modem
+remain unverified. Unknown future panics cannot be ruled out.
