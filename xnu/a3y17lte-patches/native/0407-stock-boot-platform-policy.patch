@@ -46,19 +46,28 @@
  	if (cs_blob != cs_blob->csb_ro_addr && cs_blob->csb_entitlements == NULL) {
  		sweet_amfi_attach_entitlements(cs_blob);
  	}
-@@ -392,6 +406,22 @@
+@@ -392,6 +406,31 @@
  
  static mac_policy_handle_t sweet_amfi_mac_handle;
  
 +#if defined(ARM64_BOARD_CONFIG_A5XELTE) && XNU_TARGET_OS_IOS
-+/* Native iOS freezes the static registry before BSD startup. Install the
-+ * existing signature hook during Mach initialization. Other donor policies
-+ * remain outside the native A3 registration path. */
++/* Native iOS freezes the static registry before BSD startup. This policy
++ * contains only the signature hook for the authenticated boot identities. */
++static const struct mac_policy_ops a3_boot_mac_ops = {
++	.mpo_vnode_check_signature = sweet_amfi_vnode_check_signature,
++};
++SECURITY_READ_ONLY_LATE(static struct mac_policy_conf) a3_boot_mac_conf = {
++	.mpc_name = "A3BootIdentity",
++	.mpc_fullname = "A3 original 20H392 boot identities",
++	.mpc_ops = &a3_boot_mac_ops,
++};
++SECURITY_READ_ONLY_LATE(static mac_policy_handle_t) a3_boot_mac_handle;
++
 +void a3_boot_policy_register(void);
 +void
 +a3_boot_policy_register(void)
 +{
-+	int error = mac_policy_register(&sweet_amfi_mac_conf, &sweet_amfi_mac_handle, NULL);
++	int error = mac_policy_register(&a3_boot_mac_conf, &a3_boot_mac_handle, NULL);
 +	if (error != 0) {
 +		panic("A3 boot identity policy registration failed: %d", error);
 +	}
