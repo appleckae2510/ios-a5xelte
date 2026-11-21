@@ -1,0 +1,68 @@
+--- a/bsd/dev/a5xelte_emmc.c
++++ b/bsd/dev/a5xelte_emmc.c
+@@ -992,10 +992,21 @@
+     PE_parse_boot_argn("emmcroot", name, sizeof(name));
+     PE_parse_boot_argn("emmcwrite", &writes, sizeof(writes));
+     PE_parse_boot_argn("a5log", &logging, sizeof(logging));
+-    if (strcmp(name, "USERDATA") || writes || logging) return "read-only profile required";
++    if (strcmp(name, "USERDATA") || (writes != 0 && writes != 1) || logging)
++        return "invalid A3 root access profile";
+     dev_t dev;
+-    if (a5xelte_emmc_rootdev(&dev) || emmc_writable) return "GPT or eMMC unavailable";
+-    return a3_check_ios_volume(emmc_nsectors);
++    if (a5xelte_emmc_rootdev(&dev) || emmc_writable != (writes == 1)) {
++        emmc_writable = false;
++        return "GPT or eMMC unavailable";
++    }
++    const char *error = a3_check_ios_volume(emmc_nsectors);
++    if (error != NULL) {
++        /* A rejected Android/damaged volume must never retain write access. */
++        emmc_writable = false;
++    } else if (writes == 1) {
++        printf("A3 USERDATA: validated writable root for mount updates\n");
++    }
++    return error;
+ }
+ #endif
+ #endif /* ARM64_BOARD_CONFIG_A5XELTE */
+--- a/bsd/kern/sweet_amfi.c
++++ b/bsd/kern/sweet_amfi.c
+@@ -268,7 +268,7 @@
+ 	mount_t mp = vnode_mount(vp);
+ #if defined(ARM64_BOARD_CONFIG_A5XELTE) && XNU_TARGET_OS_IOS
+ 	/* This hook receives a validated CodeDirectory. Grant stock platform
+-	 * identity only for the exact pinned 20H392 entry on read-only root. */
++	 * identity only for the exact pinned 20H392 entry on the selected root. */
+ 	*cs_flags = a3_authorize_boot_flags(cs_blob->csb_cdhash,
+ 	    cs_blob->csb_hashtype != NULL ? cs_hash_type(cs_blob->csb_hashtype) : 0,
+ 	    mp != NULL ? vfs_flags(mp) : 0, *cs_flags);
+--- a/bsd/dev/a3_boot_volume.inc
++++ b/bsd/dev/a3_boot_volume.inc
+@@ -118,7 +118,12 @@
+         (uint64_t)block * blocks != issued_bytes || issued_bytes / A3_SECTOR > partition_sectors) {
+         return "unexpected A3 iOS volume size";
+     }
+-    if (!(a3_be32(hdr + 4) & 0x100) || (a3_be32(hdr + 4) & 0x800)) return "HFSX needs repair";
++    uint32_t attributes = a3_be32(hdr + 4);
++    /* Permit normal journal replay on a writable journaled root after an
++     * interrupted boot. Apple's HFS mount code performs the replay. A dirty
++     * non-journaled volume or one marked inconsistent still needs repair. */
++    if ((attributes & 0x800) || (!(attributes & 0x100) &&
++        (!emmc_writable || !(attributes & 0x2000)))) return "HFSX needs repair";
+     a3vol.sectors_per_block = block / A3_SECTOR;
+     a3vol.blocks = blocks;
+     a3vol.catalog_bytes = ((uint64_t)a3_be32(hdr + 272) << 32) | a3_be32(hdr + 276);
+--- a/bsd/kern/a3_boot_cache.inc
++++ b/bsd/kern/a3_boot_cache.inc
+@@ -130,7 +130,10 @@
+ a3_authorize_boot_flags(const uint8_t *cdhash, uint8_t hash_type,
+     unsigned long mount_flags, unsigned int cs_flags)
+ {
+-	if ((mount_flags & (MNT_ROOTFS | MNT_RDONLY)) != (MNT_ROOTFS | MNT_RDONLY)) {
++	/* The normal iOS mount task upgrades the root to read-write. Trust
++	 * remains tied to the pinned CodeDirectory and its validated code pages,
++	 * regardless of the mount's current read-only flag. */
++	if ((mount_flags & MNT_ROOTFS) == 0) {
+ 		return cs_flags;
+ 	}
+ 	const TrustCacheEntry2_t *entry = a3_measured_identity(cdhash);

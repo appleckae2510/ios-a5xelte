@@ -1,27 +1,23 @@
 # A3Y17LTE active handoff — 2026-11-21
 
-The latest user photo shows fsck match=1 category=3 platform=0 and
-launchd's boot-task platform panic. It confirms the original cache
-measurement on the device. The exact installed BOOT hash is absent.
+The latest phone photo passes the previous platform blocker. It shows
+mount match=1 category=3 platform=1, then mount-phase-1 returning exit 1:
+mount_hfs reports Read-only file system on /dev/emmcroot0. Optional
+preboot firmware lookup also returns ENOENT. No full GUI boot is shown.
 
-BOOT v0.10 is built and delivered. It combines the checked A3 chainloader
-with the native boot identity policy installed before lockdown.
-Kernel source bd95d3f9d49173d967aa17fd6bf8adc3fb137627 passed run
-44887841371, including the linked native boot-policy qualification.
-Loader source 8db4823ae09f4cf3ee7e667a5971a2508c8f83c4 passed GCC run
-44887575375. The delivered loader passed 50 compiled ARM64 regressions.
-The final BOOT passed 11 loader-entry and 17 root-selection model cases.
+Apple's HFS mount-update code, the donor's recorded mount-phase failure
+and A5XELTE's writable-USERDATA bring-up all identify the next dependency:
+the block device must permit the normal read-only-to-read-write update.
+The old combined profile enforced emmcwrite=0.
 
-The policy uses only original pinned 20H392 CDHashes with matching hash
-types on read-only root. Its configuration and handle are sealed at
-lockdown. Unknown/writable-root identities gain no additional flags.
-The separate global Image4 trust-cache API remains unsupported.
-
-Delivered Galaxy-A3-A320FL-BOOT-v0.10-Windows.zip (14857105 bytes), SHA-256
-72eb85d39354edd795bc6eeb2f988570b5f329bf65232cc3de6b6ec46e082fa0.
-A hardware boot of v0.10 is pending. Expected next evidence is fsck
-platform=1 followed by the next boot stage or failure. SpringBoard and
-peripheral services remain unverified. See A3Y17LTE_PROGRESS.md.
+Native patch 0408 permits an explicit writable combined profile, still
+limited to a validated A3IOSROOT on GPT USERDATA. Rejected volumes lose
+write access. Normal dirty-journal replay is permitted for journaled
+writable volumes, while inconsistent/non-journaled dirty volumes require
+repair. The original pinned platform identity survives the root remount.
+Packer --writable-userdata selects this behavior. Ordinary --combined
+keeps its old read-only default. The new native build is pending.
+See A3Y17LTE_PROGRESS.md.
 
 ---
 

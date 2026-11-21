@@ -692,3 +692,53 @@ the previous measurement stage and shows platform=0. The expected new
 diagnostic is fsck match=1 category=3 platform=1. Neither successful
 SpringBoard nor camera/audio/Wi-Fi/Bluetooth/modem/touch operation is
 established by these model tests. Unknown later faults remain possible.
+
+## 2026-11-21 — mount-phase-1 reaches platform=1 and needs writable storage
+
+The user's new photo has mount match=1 category=3 platform=1. fsck has
+advanced and mount-phase-1 reports Read-only file system, then exits 1.
+The generic panic-handshake footer is secondary. The optional preboot
+firmware lookup fails with ENOENT. The photo does not show the exact
+BOOT hash or SpringBoard.
+
+Sources consulted include Apple's hfs mount_hfs/mount_hfs.c and
+core/hfs_vfsops.c, the donor's NOTES.md and A5XELTE's write-path evidence.
+GetMasterBlock's device open uses O_RDONLY|O_NDELAY. An already mounted
+device can return EBUSY during that probe. The actual HFS update must
+successfully reopen the device for write before clearing HFS_READ_ONLY.
+The previous combined A3 profile explicitly disabled that write-open.
+The donor documents the same mount[3] exited failure and the later
+writable-root continuation.
+
+Native patch 0408 accepts explicit emmcwrite=1 only with the selected
+USERDATA profile and logging disabled, retains original geometry/catalog
+checks and revokes write access for rejected volumes. The existing
+per-sector writer still bounds every CMD24 to USERDATA. Dirty journaled
+roots can reach Apple's normal journal handling. Dirty non-journaled or
+inconsistent roots still require repair.
+
+The pinned CodeDirectory/hash-type check now works on root both before
+and after its normal read-write remount. Writable or read-only non-root
+mounts and unknown signatures gain no platform flags. The SHA-384 module
+measurement, immutable cache and ordinary code-page validation remain.
+The native signature test exercises both mount states.
+
+The packer's new explicit --writable-userdata requires --combined and
+the new kernel marker. Other combined callers retain their read-only
+profile. This new boot mode writes the existing iOS USERDATA volume.
+A fresh backup or the original restore image is needed to undo those
+root-volume writes in addition to restoring BOOT.
+
+The native writer's nine synthetic-controller cases passed on the old
+linked kernel, including the actual FWRITE open, first/last-sector data,
+out-of-range sectors, disabled access, wrong partition and log redirection.
+The fresh build will repeat them on the newly linked kernel. The native
+policy host check passes root authorization before/after remount.
+Patch application and Python/YAML checks passed. Native compilation,
+combined root selection and a new device boot remain pending.
+
+Primary sources
+https://github.com/apple-oss-distributions/hfs/blob/main/mount_hfs/mount_hfs.c
+https://github.com/apple-oss-distributions/hfs/blob/main/core/hfs_vfsops.c
+https://github.com/dipa-studio/ios-sweet/blob/main/NOTES.md
+https://github.com/wardevsa/ios-a5xelte/blob/herolte/A5XELTE_PROGRESS.md

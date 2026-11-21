@@ -184,9 +184,11 @@ class TrustFixture:
                 expected = flags | 0x20000000 | 0x04000000
                 if call("_a3_authorize_boot_flags", buf+96, 2, 0x4001, flags) != expected:
                     raise ValueError(f"stock root identity was not authorized for {f['path']}")
-                for hash_type, mount in ((1, 0x4001), (2, 0x4000), (2, 1), (2, 0)):
+                if call("_a3_authorize_boot_flags", buf+96, 2, 0x4000, flags) != expected:
+                    raise ValueError(f"stock identity lost platform status after root remount for {f['path']}")
+                for hash_type, mount in ((1, 0x4001), (2, 1), (2, 0)):
                     if call("_a3_authorize_boot_flags", buf+96, hash_type, mount, flags) != flags:
-                        raise ValueError("platform identity escaped its original hash type/read-only-root scope")
+                        raise ValueError("platform identity escaped its original hash type/root scope")
         print(f"PASS: native kernel matched {len(self.files)} original identities and constraints after lockdown")
         cpu.mem_write(buf+96, self.absent)
         if "_a3_authorize_boot_flags" in call.symbols:
@@ -194,7 +196,7 @@ class TrustFixture:
                 if call("_a3_authorize_boot_flags", pointer, 2, 0x4001, 0x1234) != 0x1234:
                     raise ValueError("an unknown or absent identity acquired platform flags")
             self.platform_ready = True
-            print("PASS: 10 original root identities authorized, 42 negative policy controls rejected")
+            print("PASS: 10 original identities authorized before and after root remount, 32 negative policy controls rejected")
         if call("_a3_measured_identity", buf+96, wide=True) or call("_a3_measured_identity", 0, wide=True):
             raise ValueError("negative input incorrectly matched a release entry")
         if call("_query_trust_cache", 1, buf+96, 0) != 56:
@@ -221,7 +223,7 @@ def run():
     p.add_argument("--payload", type=Path, help="existing SWEETXNU payload; otherwise create an A3 build fixture")
     p.add_argument("--require-lookup", action="store_true", help="exit 3 if the native kernel cannot find the stock boot tasks")
     p.add_argument("--require-platform-policy", action="store_true",
-                   help="exit 3 if the native read-only-root signature policy is unavailable")
+                   help="exit 3 if the native pinned-root signature policy is unavailable")
     args = p.parse_args()
     component = args.cache.read_bytes() if args.cache else fetch_component()
     baseline = json.loads(BASELINE.read_text())

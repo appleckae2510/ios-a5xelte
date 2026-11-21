@@ -75,6 +75,8 @@ def main():
                    help='boot a separately installed HFSX iOS root from USERDATA with writes inside that partition')
     p.add_argument('--combined', action='store_true',
                    help='check the board and select the prepared read-only iOS root or the included diagnostic HFS')
+    p.add_argument('--writable-userdata', action='store_true',
+                   help='with --combined, allow the validated USERDATA root to accept iOS mount updates and writes')
     p.add_argument('--probe-emmc', action='store_true',
                    help='read the internal GPT and report USERDATA while booting from md0')
     p.add_argument('--probe-hardware', action='store_true',
@@ -89,6 +91,8 @@ def main():
         p.error('--combined requires --ramdisk and --product-adt and selects the root automatically')
     if a.a3_static_cache and not a.combined:
         p.error('--a3-static-cache requires the combined A3 boot profile')
+    if a.writable_userdata and not a.combined:
+        p.error('--writable-userdata requires --combined')
     if not a.allow_unverified_handoff:
         p.error('Review the handoff for this image and pass --allow-unverified-handoff to build it.')
     with zipfile.ZipFile(a.evidence) as z:
@@ -110,6 +114,8 @@ def main():
         raise ValueError('Hardware probe needs the A3 kernel with patch 0403 (CP registers skipped)')
     if a.combined and b'A3 COMBINED: RAM root' not in kernel:
         raise ValueError('Combined boot needs the A3 kernel with patch 0404')
+    if a.writable_userdata and b'A3 USERDATA: validated writable root' not in kernel:
+        raise ValueError('Writable combined boot requires the A3 mount-update kernel')
     if a.ios_root and b'A3Y17LTE_USERDATA_RW_V1' not in kernel:
         raise ValueError('USERDATA root needs the A3 kernel with patch 0402')
     m = mkpayload.parse_macho(kernel)
@@ -131,6 +137,8 @@ def main():
         # Resolve rd in IOFindBSDRoot, then report the actual BSD root to VFS.
         root_device = 'a3auto'
         storage_args = 'emmcprobe=0 emmcroot=USERDATA emmcwrite=0 a3combined=1 ignition_level=1'
+        if a.writable_userdata:
+            storage_args = storage_args.replace('emmcwrite=0', 'emmcwrite=1')
     hardware_args = ' a3hwprobe=1 a3btprobe=1' if a.probe_hardware or a.combined else ''
     cmdline = (f'debug=0xc serial=3 cpus=1 keepsyms=1 -noprogress rd={root_device} '
                'j7hw=1 j7keys_layout=1 a3touch=0 j7fg=0 j7gpu=0 a5gpu=0 '
@@ -163,6 +171,8 @@ def main():
     if a.combined:
         stage = 'COMBINED READ-ONLY BOOT'
         root_source = 'verified A3IOSROOT catalog in USERDATA or diagnostic HFS on md0'
+        if a.writable_userdata:
+            stage = 'COMBINED USERDATA READ-WRITE BOOT'
     report = {'target': 'a3y17lte', 'stage': stage, 'phone_boot_tested': False,
               'emmc_probe_requested': a.probe_emmc or a.combined,
               'hardware_probe_requested': a.probe_hardware or a.combined,
@@ -170,7 +180,7 @@ def main():
               'size': len(result), 'sha256': hashlib.sha256(result).hexdigest(),
               'dtbh_source': 'unaltered device BOOT backup', 'flashed': False,
               'kernel_sha256': hashlib.sha256(kernel).hexdigest(), 'cmdline': cmdline,
-              'payload': info,
+              'payload': info, 'userdata_writes_enabled': a.writable_userdata or a.ios_root,
               'loader': {'wrapper_version': 2, 'payload_crc32': f'{crc:08x}',
                          'sha256': hashlib.sha256(loader).hexdigest()}}
     a.output.with_suffix('.json').write_text(json.dumps(report, indent=2))
