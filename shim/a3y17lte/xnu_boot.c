@@ -281,7 +281,12 @@ uintptr_t a3_prepare_xnu(volatile uint64_t *log, uintptr_t embedded)
     for (unsigned i = 0; i < BOOT_LINE_LENGTH; ++i)
         ba->CommandLine[i] = p->cmdline[i];
     ba->memSizeActual = p->mem_size;
-    ba->Video = (struct boot_video){0x67000000UL, 1, 2880, 720, 1280, 32};
+    ba->Video.v_baseAddr = 0x67000000UL;
+    ba->Video.v_display = 1;
+    ba->Video.v_rowBytes = 2880;
+    ba->Video.v_width = 720;
+    ba->Video.v_height = 1280;
+    ba->Video.v_depth = 32;
     a3_clean_range(adt_pa, ba_pa + PAGE_SIZE);
 
     uintptr_t entry_pa = p->phys_base + (p->entry_va - p->virt_base);

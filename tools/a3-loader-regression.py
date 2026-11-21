@@ -164,6 +164,7 @@ def main():
         assert entry == DEST + 0x4000 and stage == 5 and writes
         assert memory[0x4000:0x5000] == bytes([0x42]) * 4096
         assert memory[0x6000:0x7000] == bytes([0x24]) * 64 + bytes(4096 - 64)
+        assert struct.unpack_from('<6Q', memory, 0x9000 + 40) == (0x67000000, 1, 2880, 720, 1280, 32)
         results.append({'case': 'valid-v1' if legacy else 'valid-v2', 'passed': True})
     entry, stage, writes, memory, original = loader.prepare(payload(), bad_crc=True)
     assert entry == 0 and stage == -6 and not writes and memory == original
