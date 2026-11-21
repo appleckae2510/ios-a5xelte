@@ -893,3 +893,52 @@ Entries for boots 0038e and 0039u, same 20H392 release. Reddit r/hackios was
 also searched explicitly at the user's request; no direct verified exact
 fix was found, and direct Reddit search could not be fetched. Do not label
 this workaround a Reddit-verified A3 fix.
+
+
+## Device evidence after v0.12 DEV — 2026-11-21
+
+New user photos show repeating USERSPACE crashes, then a later genuine kernel
+panic. backboardd SIGABRT (signal 6, reason ns 2/code 6); mediaserverd SIGSEGV
+(signal 11, code 0x100000001, FAR 0). Shared-cache slide 0x0534c000.
+mediaserverd PC 0x18c1aa0cc, LR 0x19ae29f30; backboardd PC 0x1c7963198,
+LR 0x1d6ef25f8. backboardd main-image return offsets repeatedly include
++0x9334 (e.g. mh 0x1007cc000, return 0x1007d5334), matching the donor's
+window-server startup wrapper. This similarity does not identify the
+specific exception reason or prove that the display driver is the cause.
+
+HID logs show SweetHIDTouch and SweetHIDButtons opened by
+IOHIDEventServiceUserClient. This confirms userland opening those services,
+not working physical touch or a rendered screen. No SpringBoard frame shown.
+
+Later photo: "memorystatus_jetsam_thread: no victim! available pages:5693
+@kern_memorystatus.c:4138", after Too many corpses and EXC_CORPSE_NOTIFY
+send failures -308. Source review at the matching XNU tree shows this path
+already attempts memorystatus_dump_caches(true) before panicking on remaining
+critical memory pressure. Do NOT assert that uncollected corpses alone cause
+the panic, or disable the Jetsam panic to present a false successful boot.
+
+Native A3 policy still has only A3BootIdentity; the donor's named Sandbox
+compatibility policy is not registered on this native path. The donor
+records denied XPC lookups from missing Sandbox as a backboardd dependency.
+This is a candidate native compatibility defect, not yet a measured cause
+of this phone's specific SIGABRT. The CPU-monitor entitlement warning on
+mediaserverd does not itself establish why it dereferences NULL.
+Do not globally grant new entitlements based on that warning.
+
+Existing diagnostics: Sweet crash-string scan defaults to backboardd and
+SpringBoard and is limited to the first four scans on A5XELTE; matching IOKit
+trace is also bounded. The later user photos omit the early diagnostic lines.
+NEXT REQUIRED EVIDENCE: record a video from boot through the FIRST backboardd
+crash, including STR/IOK lines and the preceding error. Full kernel log or
+symbolication with the exact 20H392 shared cache would be preferable.
+A3 has no established working live-log/USB link in this session. Do not claim
+ADB logcat works in this native XNU boot or flash another device's drivers.
+
+Apple XNU has a native -no_corpses development flag (corpse.c:159,
+corpses_enabled returns !corpses_disabled). It can reduce crash-dump retention
+but does not repair either service and does not guarantee avoiding Jetsam.
+It has NOT been added to the delivered BOOT or tested on the phone.
+No v0.13 image or new kernel is built in this diagnostic milestone.
+Current delivery remains v0.12 DEV with its explicitly disclosed cache
+signature-check skip. No physical phone write performed.
+
