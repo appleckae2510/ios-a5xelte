@@ -1,23 +1,70 @@
 # A3Y17LTE active handoff — 2026-11-21
 
-The latest phone photo passes the previous platform blocker. It shows
-mount match=1 category=3 platform=1, then mount-phase-1 returning exit 1:
-mount_hfs reports Read-only file system on /dev/emmcroot0. Optional
-preboot firmware lookup also returns ENOENT. No full GUI boot is shown.
+The latest real-device photo has progressed to mount-phase-1. Original mount
+is match=1 category=3 platform=1; it then exits 1 after mount_hfs reports
+Read-only file system on /dev/emmcroot0. Optional preboot firmware lookup
+also returns ENOENT. This is observed device evidence, not a verified v0.11 boot.
 
-Apple's HFS mount-update code, the donor's recorded mount-phase failure
-and A5XELTE's writable-USERDATA bring-up all identify the next dependency:
-the block device must permit the normal read-only-to-read-write update.
-The old combined profile enforced emmcwrite=0.
+BOOT v0.11 is built and delivered. Kernel code commit:
+eae451d7b62368a29e63fdb51bec4bee5ab13c07
+Successful CI: https://github.com/appleckae2510/ios-a5xelte/actions/runs/44893326915
+Native build job 136813621687; policy/write qualification job 136815311413.
+Kernel artifact 14703018168, authenticated ZIP digest:
+0c34a0243f8d1a0e19ddf08dbd0b13642899617c73aaa071ec2dd86f5d207801
+Kernel bytes 17582880, SHA256:
+98c155df91e9032a3901e9a587def241fb382c7d3aef8dd52cb3d700a988e953
 
-Native patch 0408 permits an explicit writable combined profile, still
-limited to a validated A3IOSROOT on GPT USERDATA. Rejected volumes lose
-write access. Normal dirty-journal replay is permitted for journaled
-writable volumes, while inconsistent/non-journaled dirty volumes require
-repair. The original pinned platform identity survives the root remount.
-Packer --writable-userdata selects this behavior. Ordinary --combined
-keeps its old read-only default. The new native build is pending.
-See A3Y17LTE_PROGRESS.md.
+New explicit --combined --writable-userdata enables emmcwrite=1 only for the
+validated USERDATA root. Ordinary combined packing stays read-only. Rejected
+Android, damaged or incomplete volumes lose write access and select md0.
+Dirty journaled HFSX may reach Apple's native journal handling; dirty
+non-journaled or inconsistent volumes still require repair. The normal HFS
+read-only-to-read-write update can now open the selected device FWRITE.
+Exact pinned original Apple CodeDirectory identities retain platform status
+on MNT_ROOTFS after the remount; unknown hashes/types and non-root mounts
+are still denied. Normal signature/page checks remain. No Apple executables
+were replaced and no panic or HFS success result was fabricated.
+The global Image4 trust-cache service remains unsupported and is reported.
+
+Apple HFS sources and donor boot notes informed the fix; see progress.
+The canonical board volume include is staged before native patches even
+when restoring the old native source checkpoint. Builds 44891780803 and
+44892929112 failed validation/preparation respectively and were not released;
+the strict validator remains enabled in the successful final run.
+
+Exact final image: A3-A320FL-BOOT-v0.11.img, 27250704 bytes, SHA256:
+59659df0cb931707c32e17de4c1b870d016a11713fa433491761d0aa77549ab7
+Uses unchanged GCC loader from 8db4823ae09f4cf3ee7e667a5971a2508c8f83c4,
+CI 44887575375/artifact 14700661428. Loader SHA256:
+38dfe5c7ce6636b99fec60d51370d0124db6082108d0fd64b270610f342587b6
+Payload wrapper A3XNPAY2 CRC32 and all segment bounds are checked.
+
+Passed on the exact final bytes: 11 full loader trials (four real A3 DT
+profiles at EL1/EL2 plus display controls); 20 combined hardware/root cases
+(six iOS selections, fourteen RAM fallbacks), FWRITE state checked after
+selection, no media writes during selection. Nine native ARM64 sector-write
+cases verify first/last USERDATA sectors and seven rejected access/range
+controls using a synthetic controller. Six C journal-profile checks passed.
+Native kernel/cache qualification passed ten original identities before and
+after remount, 32 negative controls and modified-cache rejection; the old
+kernel fails the new read-write-root identity check. The original 50-case
+loader regression remains valid for the unchanged exact loader.
+CPU models are not an actual Apple userland or device-storage boot test.
+
+Delivered Galaxy-A3-A320FL-BOOT-v0.11-Windows.zip: 14872738 bytes, 43 files,
+SHA256 b7dd1b06427a288130ace70a119d3a343b6535ad54e180f68468275f02eaaa0b
+Library ID libfile_0c8b45830e708191801794b4fa140d00.
+Contains image, matching symbols/loader, source, checksums, test logs and
+German TWRP/Windows instructions. Windows checker not run on real Windows.
+
+NEXT: user must back up BOOT and the full USERDATA partition or retain the
+full original iOS image, flash only this BOOT image in TWRP, then report the
+first complete new panic/log or successful SpringBoard. This mode writes the
+existing root volume during boot; restoring BOOT alone cannot undo volume
+changes. No phone attached, no physical flash or USERDATA write performed.
+Full launchd/service startup, journal replay, SpringBoard, touchscreen,
+camera, audio, WLAN, Bluetooth and modem remain unverified. No guarantee
+against unknown or future panics.
 
 ---
 
