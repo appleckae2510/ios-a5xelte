@@ -77,6 +77,8 @@ def main():
                    help='check the board and select the prepared read-only iOS root or the included diagnostic HFS')
     p.add_argument('--writable-userdata', action='store_true',
                    help='with --combined, allow the validated USERDATA root to accept iOS mount updates and writes')
+    p.add_argument('--development-launchd-cache', action='store_true',
+                   help='explicit development mode: bypass launchd job-cache signature/AMFI validation using its native boot argument; does not implement AMFI')
     p.add_argument('--probe-emmc', action='store_true',
                    help='read the internal GPT and report USERDATA while booting from md0')
     p.add_argument('--probe-hardware', action='store_true',
@@ -93,6 +95,8 @@ def main():
         p.error('--a3-static-cache requires the combined A3 boot profile')
     if a.writable_userdata and not a.combined:
         p.error('--writable-userdata requires --combined')
+    if a.development_launchd_cache and not (a.combined and a.writable_userdata and a.a3_static_cache):
+        p.error('--development-launchd-cache requires --combined --writable-userdata --a3-static-cache')
     if not a.allow_unverified_handoff:
         p.error('Review the handoff for this image and pass --allow-unverified-handoff to build it.')
     with zipfile.ZipFile(a.evidence) as z:
@@ -144,6 +148,11 @@ def main():
                'j7hw=1 j7keys_layout=1 a3touch=0 j7fg=0 j7gpu=0 a5gpu=0 '
                f'{storage_args} a5log=0 sweetfb_scale=1 sweetfb_lw=750 sweetfb_lh=1334'
                f'{hardware_args}')
+    if a.development_launchd_cache:
+        # Apple userland's own research path, recorded on this exact 20H392
+        # release by the donor. This deliberately skips job-cache signature
+        # verification; it is not a replacement MobileFileIntegrity service.
+        cmdline += ' launchd_unsecure_cache=1'
     with tempfile.TemporaryDirectory() as staging:
         tree_path = Path(staging) / 'board.adt'
         if a.product_adt and not a.product_adt.is_file():
@@ -174,6 +183,9 @@ def main():
         if a.writable_userdata:
             stage = 'COMBINED USERDATA READ-WRITE BOOT'
     report = {'target': 'a3y17lte', 'stage': stage, 'phone_boot_tested': False,
+              'development_launchd_cache': a.development_launchd_cache,
+              'launchd_job_cache_signature_check_skipped': a.development_launchd_cache,
+              'amfi_iokit_service_implemented': False,
               'emmc_probe_requested': a.probe_emmc or a.combined,
               'hardware_probe_requested': a.probe_hardware or a.combined,
               'root': root_source,
