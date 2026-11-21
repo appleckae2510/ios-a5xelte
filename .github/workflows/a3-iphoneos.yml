@@ -359,7 +359,7 @@ jobs:
       - run: |
           python -m pip install --only-binary=:all: 'unicorn==2.1.4'
       - name: Qualify the Apple boot-task cache on the linked A3 kernel
-        run: python tools/a3-boot-trust-test.py kernel/kernel.development.a5xelte --require-platform-policy
+        run: python tools/a3-boot-trust-test.py kernel/kernel.development.a5xelte --require-platform-policy --require-sandbox-policy
       - name: Verify the native HFS write-open path and bounded CMD24 transfers
         run: python tools/a3-emmc-write-test.py kernel/kernel.development.a5xelte --report userdata-write-tests.json
       - uses: actions/upload-artifact@v4

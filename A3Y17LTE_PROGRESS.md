@@ -942,3 +942,36 @@ No v0.13 image or new kernel is built in this diagnostic milestone.
 Current delivery remains v0.12 DEV with its explicitly disclosed cache
 signature-check skip. No physical phone write performed.
 
+
+
+## Video milestone — 2026-11-21, v0.13 work in progress
+
+The supplied 291.633 s boot video confirms "Using unsecure cache" and "Cache
+sent to launchd successfully" around 01:05. Around 02:10-02:20 the first
+backboardd heap diagnostics show "Failed at lookup with error 159 - Sandbox
+restriction" and "NSInvalidArgumentException ... NSURL initFileURLWithPath:
+nil string parameter". Unlike the earlier stills this directly establishes
+a failed Sandbox lookup in the process immediately preceding its failure.
+The missing container path is the immediate exception; whether the next
+lookup succeeds on the A3 still needs a real-device boot. The media process
+SIGSEGV and eventual Jetsam exhaustion are separate effects still to verify.
+
+Prepared native patch 0409 registers a named Sandbox compatibility policy
+before lockdown, with sealed config and handle. It permits init/check/note/
+bulk-check operations only for pinned original 20H392 platform binaries.
+Path/extension requests return ENOENT; unknown operations return ENOPOLICY;
+unknown hashes, wrong hash type or non-platform processes return EPERM.
+Only PRIV_WORK_INTERVAL can be granted, under the same stock-process gate.
+No arbitrary entitlements, container paths or extension tokens are invented.
+This is a restricted development compatibility policy, NOT a Seatbelt engine.
+
+New explicit packer option --disable-crash-snapshots adds Apple's existing
+-no_corpses flag only to the development profile. It reduces retained crash
+snapshots, does not suppress process crashes or the Jetsam panic and does
+not by itself fix memory pressure. Existing launchd cache signature-check
+skip remains explicitly disclosed. Userland and actual storage are untested.
+
+The new native regression requires the Sandbox policy; v0.12 kernel fails
+this added requirement with exit 3 while retaining its passing original
+identity tests. Local Python syntax and patch application preflight pass.
+Next: CI compilation and native/whole-image regressions. No v0.13 release yet.

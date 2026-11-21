@@ -1,0 +1,93 @@
+--- a/bsd/kern/sweet_amfi.c
++++ b/bsd/kern/sweet_amfi.c
+@@ -407,6 +407,78 @@
+ static mac_policy_handle_t sweet_amfi_mac_handle;
+ 
+ #if defined(ARM64_BOARD_CONFIG_A5XELTE) && XNU_TARGET_OS_IOS
++/* libsystem_sandbox needs a policy named Sandbox even on this native port.
++ * This development compatibility path is restricted to the measured original
++ * Apple programs already marked platform binaries by A3BootIdentity. It is
++ * not a Seatbelt profile engine and issues no extension tokens or paths. */
++static __attribute__((noinline)) int
++a3_stock_sandbox_result(int call, const uint8_t *cdhash, uint8_t hash_type,
++    int platform_binary)
++{
++    if (!platform_binary || a3_authorize_boot_flags(cdhash, hash_type,
++        MNT_ROOTFS, 0) != (CS_SIGNED | CS_PLATFORM_BINARY)) {
++        return EPERM;
++    }
++    switch (call) {
++    case 1:  /* initialize a stock system process's sandbox compatibility */
++    case 2:  /* ordinary sandbox permission check, including Mach lookup */
++    case 3:  /* process note */
++    case 0x15: /* bulk permission checks */
++        return 0;
++    case 4:  /* a path must not be fabricated */
++    case 5:  /* no extension token issuer */
++    case 6:  /* no extension token consumer */
++    case 0x43:
++        return ENOENT;
++    default:
++        return ENOPOLICY;
++    }
++}
++
++static int
++a3_stock_sandbox_syscall(struct proc *p, int call, __unused user_addr_t arg)
++{
++    if (p == PROC_NULL) {
++        return EPERM;
++    }
++    struct cs_blob *blob = csproc_get_blob(p);
++    if (blob == NULL) {
++        return EPERM;
++    }
++    int result = a3_stock_sandbox_result(call, blob->csb_cdhash,
++        blob->csb_hashtype != NULL ? cs_hash_type(blob->csb_hashtype) : 0,
++        csproc_get_platform_binary(p));
++    static uint64_t seen;
++    if (call >= 0 && call < 64 && !(seen & (1ULL << call))) {
++        seen |= 1ULL << call;
++        char name[32];
++        proc_name(proc_pid(p), name, sizeof(name));
++        printf("A3 Sandbox: %s op %d -> %d\n", name, call, result);
++    }
++    return result;
++}
++
++static int
++a3_stock_sandbox_priv_grant(__unused kauth_cred_t cred, int priv)
++{
++    /* UIKit's CA client uses this one privilege. Other grants stay denied. */
++    return priv == PRIV_WORK_INTERVAL ?
++        a3_stock_sandbox_syscall(current_proc(), 2, 0) : EPERM;
++}
++
++static const struct mac_policy_ops a3_sandbox_mac_ops = {
++    .mpo_policy_syscall = a3_stock_sandbox_syscall,
++    .mpo_priv_grant = a3_stock_sandbox_priv_grant,
++};
++SECURITY_READ_ONLY_LATE(static struct mac_policy_conf) a3_sandbox_mac_conf = {
++    .mpc_name = "Sandbox",
++    .mpc_fullname = "A3 measured stock-process Sandbox compatibility",
++    .mpc_ops = &a3_sandbox_mac_ops,
++};
++SECURITY_READ_ONLY_LATE(static mac_policy_handle_t) a3_sandbox_mac_handle;
++#endif
++
++#if defined(ARM64_BOARD_CONFIG_A5XELTE) && XNU_TARGET_OS_IOS
+ /* Native iOS freezes the static registry before BSD startup. This policy
+  * contains only the signature hook for the authenticated boot identities. */
+ static const struct mac_policy_ops a3_boot_mac_ops = {
+@@ -428,6 +500,11 @@
+ 		panic("A3 boot identity policy registration failed: %d", error);
+ 	}
+ 	printf("A3 boot identity policy registered before lockdown\n");
++    error = mac_policy_register(&a3_sandbox_mac_conf, &a3_sandbox_mac_handle, NULL);
++    if (error != 0) {
++        panic("A3 stock Sandbox registration failed: %d", error);
++    }
++    printf("A3 stock Sandbox compatibility registered before lockdown\n");
+ }
+ #endif
+ 

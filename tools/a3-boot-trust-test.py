@@ -44,6 +44,7 @@ class TrustFixture:
         self.files = baseline["files"]
         self.results = {}
         self.platform_ready = False
+        self.sandbox_ready = False
         table = mkpayload.a3_release_cache(component)
         virt, _, adtoff, adtlen, kernel_end, phys, memory = struct.unpack_from("<7Q", payload, 16)
         self.tree = payload[adtoff:adtoff+adtlen]
@@ -159,6 +160,47 @@ class TrustFixture:
         cpu.mem_write(self.table_va + changed_pos, bytes([original]))
         print("PASS: native measurement rejects a modified launch constraint")
 
+    def check_sandbox(self, cpu, call):
+        if '_a3_stock_sandbox_result' not in call.symbols:
+            print('Native stock-only Sandbox compatibility unavailable')
+            return
+        for name in ('_a3_sandbox_mac_conf','_a3_sandbox_mac_handle'):
+            address = call.symbols[name]
+            # The policy config/handle must live in the same sealed registry
+            # segment as the authenticated boot identity configuration.
+            if not self.kernel_const_address(address):
+                raise ValueError('Sandbox configuration is not protected at lockdown')
+        conf=call.symbols['_a3_sandbox_mac_conf']
+        name=int.from_bytes(cpu.mem_read(conf,8),'little')
+        if cpu.mem_read(name,8)!=b'Sandbox\0':
+            raise ValueError('libsystem_sandbox cannot find the policy by name')
+        passed=0
+        buf=self.buffer
+        for f in self.files:
+            cpu.mem_write(buf+96, bytes.fromhex(f['cdhash']))
+            for op,expected in ((1,0),(2,0),(3,0),(0x15,0),(4,2),(5,2),(6,2),(0x43,2),(0,103),(7,103),(0x99,103)):
+                if call('_a3_stock_sandbox_result',op,buf+96,2,1)!=expected:
+                    raise ValueError(f'wrong stock Sandbox result for {f["path"]}, op {op}')
+                passed+=1
+            for kind,platform in ((1,1),(2,0),(0,1)):
+                if call('_a3_stock_sandbox_result',2,buf+96,kind,platform)!=1:
+                    raise ValueError('Sandbox accepted a wrong hash type or non-platform process')
+                passed+=1
+        cpu.mem_write(buf+96,self.absent)
+        for pointer in (buf+96,0):
+            for platform in (0,1):
+                if call('_a3_stock_sandbox_result',2,pointer,2,platform)!=1:
+                    raise ValueError('Sandbox allowed an unknown or missing original identity')
+                passed+=1
+        if call('_a3_stock_sandbox_syscall',0,2,0)!=1:
+            raise ValueError('Sandbox accepted an absent process')
+        self.sandbox_ready=True
+        print(f'PASS: native stock-only Sandbox decision: {passed} identity/operation controls and null-process rejection')
+
+    def kernel_const_address(self,address):
+        segment=self.kernel.segment(address)
+        return segment[0]=='__DATA_CONST' and segment[-1]==1
+
     def query_boot_files(self, cpu, call):
         buf = self.buffer
         cpu.mem_write(buf, b"\0" * 256)
@@ -206,6 +248,7 @@ class TrustFixture:
         self.lookup_ready = rc == 0 and num > 0 and all(s == 0 for s in self.results.values())
         if not self.lookup_ready and (rc != 46 or num != 0 or any(s != 56 for s in self.results.values())):
             raise ValueError("partial or unexpected native trust-cache results; inspect each result")
+        self.check_sandbox(cpu, call)
         print("PASS: negative lookup controls")
         message = ("Stock static-cache lookup available in the kernel model." if self.lookup_ready else
                    "Global static-cache API unavailable: KERN_NOT_SUPPORTED. See the separate native boot policy result.")
@@ -221,6 +264,7 @@ def run():
     p.add_argument("kernel", type=Path)
     p.add_argument("--cache", type=Path, help="original d21ap 20H392 static cache IM4P; otherwise read from Apple's IPSW")
     p.add_argument("--payload", type=Path, help="existing SWEETXNU payload; otherwise create an A3 build fixture")
+    p.add_argument("--require-sandbox-policy", action="store_true", help="require the native stock-only Sandbox policy")
     p.add_argument("--require-lookup", action="store_true", help="exit 3 if the native kernel cannot find the stock boot tasks")
     p.add_argument("--require-platform-policy", action="store_true",
                    help="exit 3 if the native pinned-root signature policy is unavailable")
@@ -251,10 +295,12 @@ def run():
     regression = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(regression)
     kernel = regression.Kernel(args.kernel)
+    test.kernel = kernel
     regression.startup_path(kernel)
     regression.policy_lifecycle(kernel, trust_fixture=test)
     return 3 if ((args.require_lookup and not test.lookup_ready) or
-                 (args.require_platform_policy and not test.platform_ready)) else 0
+                 (args.require_platform_policy and not test.platform_ready) or
+                 (args.require_sandbox_policy and not test.sandbox_ready)) else 0
 
 
 if __name__ == "__main__":

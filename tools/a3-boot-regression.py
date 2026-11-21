@@ -142,6 +142,7 @@ def policy_lifecycle(kernel, trust_fixture=None):
         return cpu.reg_read(UC_ARM64_REG_X0) & (0xffffffffffffffff if wide else 0xffffffff)
 
     call.symbols = kernel.symbols
+    call.cpu = cpu
 
     table, entries = at("_mac_policy_list"), at("_mac_policy_static_entries")
     call("_mac_policy_init")
@@ -164,7 +165,7 @@ def policy_lifecycle(kernel, trust_fixture=None):
     if struct.unpack("<I", cpu.mem_read(at("_mac_late"), 4))[0] != 1:
         raise ValueError("Mach policy initialization did not finish")
     mach_count = struct.unpack("<I", cpu.mem_read(table, 4))[0]
-    expected_mach_count = 2 if "_a3_boot_policy_register" in kernel.symbols else 1
+    expected_mach_count = 1 + int("_a3_boot_policy_register" in kernel.symbols) + int("_a3_sandbox_mac_conf" in kernel.symbols)
     if mach_count != expected_mach_count:
         raise ValueError("unexpected count of active policies after Mach initialization")
     # Native services can still register between initmach and lockdown.

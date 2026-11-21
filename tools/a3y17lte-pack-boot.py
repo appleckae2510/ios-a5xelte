@@ -79,6 +79,8 @@ def main():
                    help='with --combined, allow the validated USERDATA root to accept iOS mount updates and writes')
     p.add_argument('--development-launchd-cache', action='store_true',
                    help='explicit development mode: bypass launchd job-cache signature/AMFI validation using its native boot argument; does not implement AMFI')
+    p.add_argument('--disable-crash-snapshots', action='store_true',
+                   help='with the development launchd profile, pass native -no_corpses to avoid retaining process crash snapshots')
     p.add_argument('--probe-emmc', action='store_true',
                    help='read the internal GPT and report USERDATA while booting from md0')
     p.add_argument('--probe-hardware', action='store_true',
@@ -97,6 +99,8 @@ def main():
         p.error('--writable-userdata requires --combined')
     if a.development_launchd_cache and not (a.combined and a.writable_userdata and a.a3_static_cache):
         p.error('--development-launchd-cache requires --combined --writable-userdata --a3-static-cache')
+    if a.disable_crash_snapshots and not a.development_launchd_cache:
+        p.error('--disable-crash-snapshots requires --development-launchd-cache')
     if not a.allow_unverified_handoff:
         p.error('Review the handoff for this image and pass --allow-unverified-handoff to build it.')
     with zipfile.ZipFile(a.evidence) as z:
@@ -153,6 +157,8 @@ def main():
         # release by the donor. This deliberately skips job-cache signature
         # verification; it is not a replacement MobileFileIntegrity service.
         cmdline += ' launchd_unsecure_cache=1'
+    if a.disable_crash_snapshots:
+        cmdline += ' -no_corpses'
     with tempfile.TemporaryDirectory() as staging:
         tree_path = Path(staging) / 'board.adt'
         if a.product_adt and not a.product_adt.is_file():
@@ -183,6 +189,7 @@ def main():
         if a.writable_userdata:
             stage = 'COMBINED USERDATA READ-WRITE BOOT'
     report = {'target': 'a3y17lte', 'stage': stage, 'phone_boot_tested': False,
+              'crash_snapshots_disabled': a.disable_crash_snapshots,
               'development_launchd_cache': a.development_launchd_cache,
               'launchd_job_cache_signature_check_skipped': a.development_launchd_cache,
               'amfi_iokit_service_implemented': False,
