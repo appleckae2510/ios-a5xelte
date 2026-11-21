@@ -35,7 +35,7 @@
 +static int
 +a3_stock_sandbox_syscall(struct proc *p, int call, __unused user_addr_t arg)
 +{
-+    if (p == PROC_NULL) {
++    if (p == NULL) {
 +        return EPERM;
 +    }
 +    struct cs_blob *blob = csproc_get_blob(p);
