@@ -824,3 +824,72 @@ mount update. The HFS update path opens the device FWRITE before clearing
 its read-only state. The optional env=0 preboot ENOENT was not disguised
 or repaired by fabricating firmware directories. No new hardware validation
 is inferred from a registered placeholder service.
+
+
+## 2026-11-21 — explicit launchd-cache development profile
+
+Latest real-device photo: launchd_cache_loader[23] aborts with namespace 7,
+subcode 1, "Unable to find AMFI". Earlier tzinit/PRNG boot tasks ran. The
+previous mount-phase-1 read-only failure is no longer visible. The photo
+does not contain an image digest, so it cannot prove a specific flashed hash.
+This is further startup progress, not SpringBoard or successful full boot.
+
+Native A3BootIdentity validates pinned original program identities; it does
+not implement the AppleMobileFileIntegrity IOKit service that cache_loader
+looks up (IOServiceOpen type 0, external method selector 6). Renaming the
+MAC policy would not provide that service. Donor notes document the exact
+same 20H392 failure and the launchd_unsecure_cache=1 development boot path.
+
+A new explicit --development-launchd-cache packer option appends only this
+argument and requires combined + writable-userdata + the pinned static
+cache. IMPORTANT: this intentionally SKIPS launchd job-cache signature and
+AMFI validation. It is a development workaround, not a completed AMFI
+implementation, not a secure production boot, and not a guarantee of a GUI.
+Ordinary profiles do not enable it. No Apple executable is patched.
+Normal native program-identity checks have not been globally disabled.
+No personal/confidential data should be used on this development system.
+
+Packer source commit 836bbde6b3a7d2a033573bae35034c8ba257d340.
+No kernel rebuild was needed; the native kernel and GCC loader are
+byte-identical to delivered v0.11:
+kernel source eae451d7b62368a29e63fdb51bec4bee5ab13c07
+CI https://github.com/appleckae2510/ios-a5xelte/actions/runs/44893326915
+kernel SHA256 98c155df91e9032a3901e9a587def241fb382c7d3aef8dd52cb3d700a988e953
+loader source 8db4823ae09f4cf3ee7e667a5971a2508c8f83c4
+loader SHA256 38dfe5c7ce6636b99fec60d51370d0124db6082108d0fd64b270610f342587b6
+
+A3-A320FL-BOOT-v0.12-DEV.img, 27250704 bytes, SHA256:
+9e0fc737985b665811097af51b91095134bb74096e1686e3334684b85b53a3aa
+Passed on exact packed bytes: 11 full loader starts, 20 joint hardware/root
+cases, original kernel policy/cache qualification (10 identities, 32 negative
+controls), payload CRC32 and exact segment comparison. Profile comparison
+normalizes only the expected fresh 64-byte random seed; otherwise all load
+segments, ADT data, md0 and original static cache remain unchanged and only
+the command line gains launchd_unsecure_cache=1. Three incomplete development
+profile combinations are rejected. The unchanged kernel/loader retain their
+previously completed 9 native write, 6 journal-profile and 50 loader cases.
+Tests do NOT execute Apple's launchd_cache_loader. Its development branch
+on this A3 remains a physical-device test, as does all subsequent userland.
+Global Image4 static trust-cache API remains unsupported.
+
+Delivered Galaxy-A3-A320FL-BOOT-v0.12-DEV-Windows.zip:
+14872915 bytes, 44 files, SHA256:
+aebed4be952a09ed3320ec95bf906f3a3a880cbf86e1f24609116160fe2e4b0c
+Library ID libfile_aa903e021a308191b64a0a7c251bcb7b.
+Package contains image, matching symbols/loader, source, checksums,
+test reports and German installation/security-limit instructions.
+Windows checker remains physically untested.
+
+NEXT: user backs up BOOT and full USERDATA (or retains full original root
+image), flashes only v0.12 DEV to Boot in TWRP, reports cache-loader
+"Using unsecure cache" or the next complete panic and preceding lines.
+USERDATA remains writable during boot. BOOT-only rollback cannot undo root
+volume writes. No physical flash or phone writes were performed here.
+SpringBoard and touch/camera/WLAN/BT/audio/modem remain unverified.
+
+Primary evidence:
+https://github.com/dipa-studio/ios-sweet/blob/main/NOTES.md
+Entries for boots 0038e and 0039u, same 20H392 release. Reddit r/hackios was
+also searched explicitly at the user's request; no direct verified exact
+fix was found, and direct Reddit search could not be fetched. Do not label
+this workaround a Reddit-verified A3 fix.
