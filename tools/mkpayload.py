@@ -159,14 +159,14 @@ A3_CRYPTEX_TABLE_SHA384 = '125420ed05e44818aefa99819dfc8558071563cae9698c40ec5b6
 def a3_cryptex_release_cache(app_component, system_component):
     """Keep the original App/System Cryptex modules, authenticated to 20H392."""
     modules = []
-    for component, digest, count in (
-        (app_component, 'a58d8b89f43b8f0eeb097dc554df95def3ea62692b3bd9b0aeda2b710a1203815f829f56ef14e1c993245c130247f0ca', 30),
-        (system_component, '204e476a45650adde5bedb65ff93af211cb5f2c0e20ec8ae274025df5017a988d598512846b9115cd5c77ac5ebcc08e1', 61),
+    for component, digest, count, kind in (
+        (app_component, 'a58d8b89f43b8f0eeb097dc554df95def3ea62692b3bd9b0aeda2b710a1203815f829f56ef14e1c993245c130247f0ca', 30, 'trca'),
+        (system_component, '204e476a45650adde5bedb65ff93af211cb5f2c0e20ec8ae274025df5017a988d598512846b9115cd5c77ac5ebcc08e1', 61, 'trcs'),
     ):
         if hashlib.sha384(component).hexdigest() != digest:
             raise ValueError('Cryptex trust cache differs from original d21ap 20H392')
         module, info = adt.im4p_payload(component)
-        if info['type'] != 'trst' or info['encrypted'] or len(module) != 24 + count*24 or struct.unpack_from('<I16xI',module) != (2,count):
+        if info['type'] != kind or info['encrypted'] or len(module) != 24 + count*24 or struct.unpack_from('<I16xI',module) != (2,count):
             raise ValueError('unexpected 20H392 Cryptex module')
         modules.append(module)
     table = struct.pack('<3I', 2, 12, 12+len(modules[0])) + b''.join(modules)
