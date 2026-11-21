@@ -118,7 +118,12 @@ static const char *a3_check_ios_volume(uint64_t partition_sectors)
         (uint64_t)block * blocks != issued_bytes || issued_bytes / A3_SECTOR > partition_sectors) {
         return "unexpected A3 iOS volume size";
     }
-    if (!(a3_be32(hdr + 4) & 0x100) || (a3_be32(hdr + 4) & 0x800)) return "HFSX needs repair";
+    uint32_t attributes = a3_be32(hdr + 4);
+    /* Permit normal journal replay on a writable journaled root after an
+     * interrupted boot. Apple's HFS mount code performs the replay. A dirty
+     * non-journaled volume or one marked inconsistent still needs repair. */
+    if ((attributes & 0x800) || (!(attributes & 0x100) &&
+        (!emmc_writable || !(attributes & 0x2000)))) return "HFSX needs repair";
     a3vol.sectors_per_block = block / A3_SECTOR;
     a3vol.blocks = blocks;
     a3vol.catalog_bytes = ((uint64_t)a3_be32(hdr + 272) << 32) | a3_be32(hdr + 276);

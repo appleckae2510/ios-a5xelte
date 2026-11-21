@@ -8,6 +8,9 @@ import sys
 
 
 def prepare(root, board):
+    # Keep the staged volume check identical to its canonical board source,
+    # including when resuming a checkpoint made before this mount-update fix.
+    shutil.copyfile(board / "a3_boot_volume.inc", root / "bsd/dev/a3_boot_volume.inc")
     # Resume snapshots already contain the donor series. Apply the native-only
     # change here for both fresh and restored source trees.
     cmd = ["git", "apply", "--whitespace=nowarn"]
