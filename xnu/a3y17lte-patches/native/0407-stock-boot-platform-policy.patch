@@ -1,0 +1,123 @@
+--- a/security/mac_base.c
++++ b/security/mac_base.c
+@@ -364,6 +364,11 @@
+ void
+ mac_policy_initmach(void)
+ {
++#if defined(ARM64_BOARD_CONFIG_A5XELTE) && XNU_TARGET_OS_IOS
++	/* Install the boot identity policy while the static registry is writable. */
++	extern void a3_boot_policy_register(void);
++	a3_boot_policy_register();
++#endif
+ 	/*
+ 	 * For the purposes of modules that want to know if they were
+ 	 * loaded "early", set the mac_late flag once we've processed
+--- a/bsd/kern/sweet_amfi.c
++++ b/bsd/kern/sweet_amfi.c
+@@ -35,6 +35,9 @@
+ #include <sys/ubc_internal.h>
+ #include <sys/vnode.h>
+ #include <security/mac_policy.h>
++#if defined(ARM64_BOARD_CONFIG_A5XELTE) && XNU_TARGET_OS_IOS
++#include "a3_boot_cache.h"
++#endif
+ 
+ /* iokit/Kernel/arm/SweetEntitlements.cpp */
+ void *sweet_entitlements_create(const CS_GenericBlob *blob, size_t blob_len);
+@@ -263,10 +266,21 @@
+     __unused char **fatal_failure_desc, __unused size_t *fatal_failure_desc_len)
+ {
+ 	mount_t mp = vnode_mount(vp);
++#if defined(ARM64_BOARD_CONFIG_A5XELTE) && XNU_TARGET_OS_IOS
++	/* This hook receives a validated CodeDirectory. Grant stock platform
++	 * identity only for the exact pinned 20H392 entry on read-only root. */
++	*cs_flags = a3_authorize_boot_flags(cs_blob->csb_cdhash,
++	    cs_blob->csb_hashtype != NULL ? cs_hash_type(cs_blob->csb_hashtype) : 0,
++	    mp != NULL ? vfs_flags(mp) : 0, *cs_flags);
++	if ((*cs_flags & CS_PLATFORM_BINARY) == 0) {
++		return 0;
++	}
++#else
+ 	*cs_flags |= CS_SIGNED;
+ 	if (mp != NULL && (vfs_flags(mp) & MNT_ROOTFS)) {
+ 		*cs_flags |= CS_PLATFORM_BINARY;
+ 	}
++#endif
+ 	if (cs_blob != cs_blob->csb_ro_addr && cs_blob->csb_entitlements == NULL) {
+ 		sweet_amfi_attach_entitlements(cs_blob);
+ 	}
+@@ -392,6 +406,22 @@
+ 
+ static mac_policy_handle_t sweet_amfi_mac_handle;
+ 
++#if defined(ARM64_BOARD_CONFIG_A5XELTE) && XNU_TARGET_OS_IOS
++/* Native iOS freezes the static registry before BSD startup. Install the
++ * existing signature hook during Mach initialization. Other donor policies
++ * remain outside the native A3 registration path. */
++void a3_boot_policy_register(void);
++void
++a3_boot_policy_register(void)
++{
++	int error = mac_policy_register(&sweet_amfi_mac_conf, &sweet_amfi_mac_handle, NULL);
++	if (error != 0) {
++		panic("A3 boot identity policy registration failed: %d", error);
++	}
++	printf("A3 boot identity policy registered before lockdown\n");
++}
++#endif
++
+ /* Called from bsd_init once MAC policies can register, before any exec. */
+ void sweet_amfi_policy_register(void);
+ 
+--- a/bsd/kern/a3_boot_cache.h
++++ b/bsd/kern/a3_boot_cache.h
+@@ -2,4 +2,6 @@
+ #define A3_BOOT_CACHE_H
+ struct vnode;
+ void a3_note_boot_identity(struct vnode *vp, const uint8_t *cdhash, int platform_binary);
++unsigned int a3_authorize_boot_flags(const uint8_t *cdhash, uint8_t hash_type,
++    unsigned long mount_flags, unsigned int cs_flags);
+ #endif
+--- a/bsd/kern/a3_boot_cache.inc
++++ b/bsd/kern/a3_boot_cache.inc
+@@ -1,12 +1,14 @@
+ /*
+  * SM-A320FL boot diagnostics for the original d21ap 20H392 static cache.
+- * This measurement never supplies a signer type, entitlements, platform
+- * flags, MAC return value or a global trust-cache query token.
++ * The authenticated table also backs the read-only-root signature policy.
++ * The global Image4 trust-cache service remains a separate interface.
+  */
+ #include <kern/startup.h>
+ #include <libkern/crypto/sha2.h>
+ #include <pexpert/boot.h>
+ #include <sys/vnode.h>
++#include <sys/mount.h>
++#include <sys/codesign.h>
+ #include <TrustCache/RawTypes.h>
+ #include "a3_boot_cache.h"
+ 
+@@ -121,6 +123,23 @@
+ 	return NULL;
+ }
+ 
++/* A CodeDirectory hash identifies its signed code-page hashes and
++ * entitlements. Runtime page verification remains with the normal XNU path.
++ * Names and locations within the root never substitute for this identity. */
++unsigned int
++a3_authorize_boot_flags(const uint8_t *cdhash, uint8_t hash_type,
++    unsigned long mount_flags, unsigned int cs_flags)
++{
++	if ((mount_flags & (MNT_ROOTFS | MNT_RDONLY)) != (MNT_ROOTFS | MNT_RDONLY)) {
++		return cs_flags;
++	}
++	const TrustCacheEntry2_t *entry = a3_measured_identity(cdhash);
++	if (entry == NULL || entry->hashType != hash_type) {
++		return cs_flags;
++	}
++	return cs_flags | CS_SIGNED | CS_PLATFORM_BINARY;
++}
++
+ /* Called after MAC has supplied its actual result. Names select log output only. */
+ void
+ a3_note_boot_identity(vnode_t vp, const uint8_t *cdhash, int platform_binary)

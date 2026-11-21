@@ -7,6 +7,7 @@ from pathlib import Path
 import struct
 import tempfile
 import zipfile
+import zlib
 
 import adt
 import mkadt_a3y17lte as board
@@ -117,6 +118,8 @@ def main():
     loader = a.loader.read_bytes()
     if len(loader) > 0x4000 or loader[56:60] != b'ARMd' or b'A3 2017 XNU LOADER' not in loader:
         raise ValueError('Not the compiled A3 entry loader')
+    if b'A3XNPAY2' not in loader:
+        raise ValueError('Use the A3 loader with checked-payload support')
     a.output.parent.mkdir(parents=True, exist_ok=True)
     storage_args = 'emmcprobe=1 emmcroot=USERDATA' if a.probe_emmc else 'emmcprobe=0'
     storage_args += ' emmcwrite=0'
@@ -141,7 +144,9 @@ def main():
         payload, info = mkpayload.build(str(a.kernel), str(tree_path), cmdline,
                                         str(a.ramdisk) if a.ramdisk else None,
                                         a3_static_cache=a.a3_static_cache)
-    combined = bytearray(loader.ljust(0x4000, b'\0')) + b'A3XNPAY1' + struct.pack('<Q', len(payload)) + payload
+    crc = zlib.crc32(payload)
+    combined = (bytearray(loader.ljust(0x4000, b'\0')) + b'A3XNPAY2' +
+                struct.pack('<II', len(payload), crc) + payload)
     struct.pack_into('<Q', combined, 16, (len(combined) + 0x10000 + 4095) & ~4095)
     # S-Boot's conventional low-memory staging must stay below firmware logs.
     if len(combined) >= 32 * 1024 * 1024: raise ValueError('Embedded kernel exceeds 32 MiB staging limit')
@@ -165,7 +170,9 @@ def main():
               'size': len(result), 'sha256': hashlib.sha256(result).hexdigest(),
               'dtbh_source': 'unaltered device BOOT backup', 'flashed': False,
               'kernel_sha256': hashlib.sha256(kernel).hexdigest(), 'cmdline': cmdline,
-              'payload': info}
+              'payload': info,
+              'loader': {'wrapper_version': 2, 'payload_crc32': f'{crc:08x}',
+                         'sha256': hashlib.sha256(loader).hexdigest()}}
     a.output.with_suffix('.json').write_text(json.dumps(report, indent=2))
     print(f'{a.output}: built entry test, {len(result)} bytes. NOT a working iOS ROM. Not flashed.')
 

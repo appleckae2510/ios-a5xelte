@@ -1,0 +1,40 @@
+name: A3 loader regression
+on:
+  push:
+    branches: [experiment/a3y17lte-iphoneos-20261119]
+    paths: ['.github/workflows/a3-loader.yml', 'shim/a3y17lte/**', 'tools/a3-loader-regression.py']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  loader:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install ARM64 compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: |
+          python -m pip install --only-binary=:all: 'unicorn==2.1.4'
+      - name: Compile the A3 chainloader
+        run: python shim/a3y17lte/build.py
+      - name: Execute compiled loader regression cases
+        run: >-
+          python tools/a3-loader-regression.py
+          --image shim/a3y17lte/out/a3y17lte-loader.Image
+          --elf shim/a3y17lte/out/a3y17lte-loader.elf
+          --report shim/a3y17lte/out/loader-regression.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: a3-loader
+          path: |
+            shim/a3y17lte/out/a3y17lte-loader.Image
+            shim/a3y17lte/out/a3y17lte-loader.elf
+            shim/a3y17lte/out/loader-regression.json

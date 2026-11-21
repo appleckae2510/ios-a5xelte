@@ -43,6 +43,7 @@ class TrustFixture:
             raise ValueError("expected a native A3 payload")
         self.files = baseline["files"]
         self.results = {}
+        self.platform_ready = False
         table = mkpayload.a3_release_cache(component)
         virt, _, adtoff, adtlen, kernel_end, phys, memory = struct.unpack_from("<7Q", payload, 16)
         self.tree = payload[adtoff:adtoff+adtlen]
@@ -152,6 +153,9 @@ class TrustFixture:
         call("_a3_measure_boot_cache")
         if call("_a3_measured_identity", out+96, wide=True):
             raise ValueError("a modified static cache produced an identity")
+        if "_a3_authorize_boot_flags" in kernel.symbols:
+            if call("_a3_authorize_boot_flags", out+96, 2, 0x4001, 0x1234) != 0x1234:
+                raise ValueError("a modified cache granted platform identity")
         cpu.mem_write(self.table_va + changed_pos, bytes([original]))
         print("PASS: native measurement rejects a modified launch constraint")
 
@@ -173,8 +177,24 @@ class TrustFixture:
             result = call("_query_trust_cache", 1, buf+96, 0)
             self.results[f["path"]] = result
             print(f"  {f['path']}: measured category={f['category']}, system lookup={result}")
+            if "_a3_authorize_boot_flags" in call.symbols:
+                flags = 0x1234
+                # The signed flags are read from XNU's cs_blobs.h. Test exact
+                # stock identities with read-only root and the entry's hash type.
+                expected = flags | 0x20000000 | 0x04000000
+                if call("_a3_authorize_boot_flags", buf+96, 2, 0x4001, flags) != expected:
+                    raise ValueError(f"stock root identity was not authorized for {f['path']}")
+                for hash_type, mount in ((1, 0x4001), (2, 0x4000), (2, 1), (2, 0)):
+                    if call("_a3_authorize_boot_flags", buf+96, hash_type, mount, flags) != flags:
+                        raise ValueError("platform identity escaped its original hash type/read-only-root scope")
         print(f"PASS: native kernel matched {len(self.files)} original identities and constraints after lockdown")
         cpu.mem_write(buf+96, self.absent)
+        if "_a3_authorize_boot_flags" in call.symbols:
+            for pointer in (buf+96, 0):
+                if call("_a3_authorize_boot_flags", pointer, 2, 0x4001, 0x1234) != 0x1234:
+                    raise ValueError("an unknown or absent identity acquired platform flags")
+            self.platform_ready = True
+            print("PASS: 10 original root identities authorized, 42 negative policy controls rejected")
         if call("_a3_measured_identity", buf+96, wide=True) or call("_a3_measured_identity", 0, wide=True):
             raise ValueError("negative input incorrectly matched a release entry")
         if call("_query_trust_cache", 1, buf+96, 0) != 56:
@@ -186,7 +206,7 @@ class TrustFixture:
             raise ValueError("partial or unexpected native trust-cache results; inspect each result")
         print("PASS: negative lookup controls")
         message = ("Stock static-cache lookup available in the kernel model." if self.lookup_ready else
-                   "BLOCKED: kernel model reports KERN_NOT_SUPPORTED and no matching stock boot tasks.")
+                   "Global static-cache API unavailable: KERN_NOT_SUPPORTED. See the separate native boot policy result.")
         print(message)
         if path := os.environ.get("GITHUB_STEP_SUMMARY"):
             with open(path, "a") as stream:
@@ -200,6 +220,8 @@ def run():
     p.add_argument("--cache", type=Path, help="original d21ap 20H392 static cache IM4P; otherwise read from Apple's IPSW")
     p.add_argument("--payload", type=Path, help="existing SWEETXNU payload; otherwise create an A3 build fixture")
     p.add_argument("--require-lookup", action="store_true", help="exit 3 if the native kernel cannot find the stock boot tasks")
+    p.add_argument("--require-platform-policy", action="store_true",
+                   help="exit 3 if the native read-only-root signature policy is unavailable")
     args = p.parse_args()
     component = args.cache.read_bytes() if args.cache else fetch_component()
     baseline = json.loads(BASELINE.read_text())
@@ -229,7 +251,8 @@ def run():
     kernel = regression.Kernel(args.kernel)
     regression.startup_path(kernel)
     regression.policy_lifecycle(kernel, trust_fixture=test)
-    return 3 if args.require_lookup and not test.lookup_ready else 0
+    return 3 if ((args.require_lookup and not test.lookup_ready) or
+                 (args.require_platform_policy and not test.platform_ready)) else 0
 
 
 if __name__ == "__main__":

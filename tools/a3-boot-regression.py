@@ -76,6 +76,11 @@ def startup_path(kernel):
                 cursor = branches.index(kernel.symbols[target], cursor) + 1
             except ValueError as exc:
                 raise ValueError(f"{function} no longer reaches {target} in expected order") from exc
+    if "_a3_authorize_boot_flags" in kernel.symbols:
+        if kernel.symbols["_a3_boot_policy_register"] not in kernel.calls("_mac_policy_initmach"):
+            raise ValueError("native boot identity policy is not installed before lockdown")
+        if kernel.symbols["_a3_authorize_boot_flags"] not in kernel.calls("_sweet_amfi_vnode_check_signature"):
+            raise ValueError("the actual signature hook does not use the pinned identity decision")
     for name in ("_mac_policy_list", "_mac_policy_static_entries", "_startup_phase"):
         segment, *_, prot = kernel.segment(kernel.symbols[name])
         if segment != "__DATA_CONST" or prot != 1:
@@ -136,6 +141,8 @@ def policy_lifecycle(kernel, trust_fixture=None):
             raise ValueError(f"{name} failed to return")
         return cpu.reg_read(UC_ARM64_REG_X0) & (0xffffffffffffffff if wide else 0xffffffff)
 
+    call.symbols = kernel.symbols
+
     table, entries = at("_mac_policy_list"), at("_mac_policy_static_entries")
     call("_mac_policy_init")
     expected = (0, 8, 0, 0, 1, 0, entries)
@@ -156,13 +163,18 @@ def policy_lifecycle(kernel, trust_fixture=None):
     call("_mac_policy_initmach")
     if struct.unpack("<I", cpu.mem_read(at("_mac_late"), 4))[0] != 1:
         raise ValueError("Mach policy initialization did not finish")
+    mach_count = struct.unpack("<I", cpu.mem_read(table, 4))[0]
+    expected_mach_count = 2 if "_a3_boot_policy_register" in kernel.symbols else 1
+    if mach_count != expected_mach_count:
+        raise ValueError("unexpected count of active policies after Mach initialization")
     # Native services can still register between initmach and lockdown.
     second = temp + 0x3000
     cpu.mem_write(temp + 640, b"a3-next\0second early policy\0")
     cpu.mem_write(second, struct.pack("<QQ16xQ", temp + 640, temp + 648, ops))
     if call("_mac_policy_register", second, handle + 4, 0) != 0:
         raise ValueError("pre-lockdown MAC registration failed after initmach")
-    if struct.unpack("<I", cpu.mem_read(handle + 4, 4))[0] != 1 or struct.unpack("<I", cpu.mem_read(table, 4))[0] != 2:
+    if (struct.unpack("<I", cpu.mem_read(handle + 4, 4))[0] != mach_count or
+            struct.unpack("<I", cpu.mem_read(table, 4))[0] != mach_count + 1):
         raise ValueError("second early policy did not receive a distinct active slot")
     if trust_fixture is not None:
         trust_fixture.install_boot_inputs(kernel, cpu, call)

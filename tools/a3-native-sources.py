@@ -12,7 +12,8 @@ def prepare(root, board):
     # change here for both fresh and restored source trees.
     cmd = ["git", "apply", "--whitespace=nowarn"]
     env = {**os.environ, "GIT_CEILING_DIRECTORIES": str(root.parent)}
-    for name in ("0405-static-mac-lifetime.patch", "0406-verified-boot-cache-measurement.patch"):
+    for name in ("0405-static-mac-lifetime.patch", "0406-verified-boot-cache-measurement.patch",
+                 "0407-stock-boot-platform-policy.patch"):
         patch = (board.parent / "native" / name).resolve()
         applied = subprocess.run(cmd + ["--reverse", "--check", str(patch)], cwd=root,
                                  env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

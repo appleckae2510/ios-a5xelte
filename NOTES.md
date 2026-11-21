@@ -1,22 +1,24 @@
-# A3Y17LTE active handoff — 2026-11-20
+# A3Y17LTE active handoff — 2026-11-21
 
-The device photo reaches Apple launchd 7.0.0 and the fsck boot task, then
-reports that /sbin/fsck is not a platform binary. It shows no BOOT hash.
+The user's latest photo on SM-A320FL shows the measured fsck identity:
+match=1 category=3 platform=0, followed by launchd's boot-task platform
+panic. This confirms the pinned-cache measurement on the physical device.
+The photo has no BOOT hash. SpringBoard has not been observed.
 
-Kernel commit 2b4707ab87af41e07883d4b21387bdcb5475b01e compiles in run
-44794529811. The private cache measurement recognizes the ten original
-20H392 executables. The regular static-cache platform provider remains
-unavailable. The combined native qualification exits 3. Eleven modeled
-loader trials and seventeen root-selection trials passed. A physical
-boot of this candidate and SpringBoard remain unverified.
+The A3 chainloader now validates every segment, ADT/boot-argument extent,
+entry backing and overlaps before copying. New packages use an IEEE
+CRC-32 checked A3XNPAY2 wrapper. The loader also accepts A3XNPAY1.
+Fifty compiled ARM64 regression cases passed locally. Eleven full loader
+trials reached the existing XNU marker and seventeen root cases passed.
 
-At the user's request the existing engineering bytes were delivered as
-Galaxy-A3-A320FL-Entwicklungsstand-2026-11-20.zip, with the matching
-symbol-bearing kernel, BOOT profile, original test logs, German TWRP
-diagnostic instructions and a local Windows checksum checker.
-The archive explicitly documents the fsck blocker. Its SHA-256 is
-58b39b74d008392a620e9bc79b54e4a93886fbe89d1c275b2fea714a24f86fdf.
-See A3Y17LTE_PROGRESS.md.
+The native A3 signature policy is now registered from mac_policy_initmach,
+before lockdown. It uses the exact SHA-384-verified 20H392 table, matching
+the actual CDHash and hash type, and requires read-only root. Page and
+signature validation remain with the normal XNU path. Host tests exercise
+all 2,754 entries and the mount/hash negative controls. A fresh native
+kernel build and linked-policy qualification are pending in this commit.
+The global Image4 trust-cache API remains unavailable. It is reported
+separately from the boot policy. See A3Y17LTE_PROGRESS.md.
 
 ---
 

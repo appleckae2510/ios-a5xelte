@@ -591,3 +591,46 @@ The known fsck platform authorization blocker is still open. This
 delivery does not establish successful SpringBoard or camera, audio,
 Wi-Fi, Bluetooth, modem or touch operation. Completing those services
 requires further kernel and board work followed by hardware tests.
+
+## 2026-11-21 — Loader validation and original boot-program platform policy
+
+The new photo shows the exact diagnostic line for fsck, match=1,
+category=3, platform=0. Apple launchd then reports the same platform
+boot-task panic. This confirms the measured identity in hardware.
+The photograph does not identify the exact BOOT by hash.
+
+The compiled A3 loader now validates the entire segment set before
+copying. It rejects overlapping file/destination ranges, header/ADT
+overlaps, segments beyond kernel_end, overflow/unaligned mappings,
+unbacked or unaligned entry points, truncated metadata and an
+unterminated command line. Firmware FDT parsing respects its actual
+structure and string extents, rejects invalid names/root structure
+and preserves all four diagnosed A3 variants.
+
+A3XNPAY2 retains the 16-byte wrapper and adds CRC-32 over the complete
+payload. A3XNPAY1 remains accepted for existing packages. The packer
+requires a loader that supports the checked format. Fifty compiled
+ARM64 regression cases passed, including reproducing the original
+loader's partial-write defect as a negative control. Eleven complete
+EL1/EL2 and display-state trials reached the existing kernel's first
+marker. Seventeen combined root-selection scenarios passed.
+The only ADT difference from the previous engineering payload was its
+fresh 64-byte random seed. This is modeled execution.
+
+Native patch 0407 registers the existing signature hook before lockdown
+through mac_policy_initmach. Only exact CDHashes and matching hash types
+from the pinned original 20H392 module on MNT_ROOTFS|MNT_RDONLY receive
+CS_SIGNED|CS_PLATFORM_BINARY through the MAC signature decision. File
+names alone supply no authority. Unknown identities, incorrect hash types
+and writable/non-root mounts preserve their input flags. Kernel signature
+and page validation continue normally. The policy never registers the
+donor permissive sandbox. The global Image4 trust-cache service is still
+unsupported and is reported independently. The CI criterion now exercises
+the native boot policy, retaining --require-lookup for the separate API.
+
+Patch application and the host policy test passed. The host test checked
+all 2,754 original identities, malformed cache input and mount/hash
+negative cases. A native iPhoneOS compilation, linked boot-policy
+qualification and a hardware boot are pending. The previous kernel is
+a negative control for the new --require-platform-policy criterion.
+A full GUI boot and all peripheral services remain unverified.
