@@ -1,130 +1,110 @@
-# A3Y17LTE active handoff — 2026-11-21, BOOT v0.13 DEV delivered
+# A3Y17LTE active handoff — 2026-11-21, BOOT v0.14 DEV delivered
 
-The user's 291.633-second video is inspected. At about 01:05 it shows
-"Using unsecure cache" and "Cache sent to launchd successfully": the earlier
-AMFI cache-loader abort is passed. At about 02:10-02:25 the bounded
-backboardd heap-string diagnostic contains "Failed at lookup with error 159
-- Sandbox restriction" and NSInvalidArgumentException, NSURL
-initFileURLWithPath: nil string parameter. These are diagnostic strings in
-the failed process, not a complete execution trace proving all causality.
-The donor A5XELTE notes localize the same exception to a missing system-
-container path. Current native code lacked the named Sandbox policy.
-Repeated mediaserverd SIGSEGV and a later Jetsam no-victim panic were shown
-in earlier stills. No full GUI boot is shown and photos/video carry no hash.
+Latest physical evidence: photo IMG_7B65C14B-9B7F-4D87-AD1E-AD04B87E698E.jpeg
+shows userspace panic "unexpected exec of non-platform binary":
+/System/Cryptexes/App/usr/libexec/webbookmarksd, PID315. Framebuffer copy/swap
+counters exceed 100 with about 12.5 fps. This is display-path activity, NOT
+proof of SpringBoard or a complete GUI. The photo carries no flashed-image
+or installed-program digest. No physical phone is connected here.
 
-NEW NATIVE KERNEL BUILT:
-Source 733bb3fa12f8190c22ce65b44022d820f257b83e
-CI https://github.com/appleckae2510/ios-a5xelte/actions/runs/44911647525
-Native build job 136868551923 and qualification job 136870893429 succeeded.
-Artifact 14710019103 (kernel ZIP digest
-b917c8486039cc4ee9a13cbf07d89bbedecd56aaa90aa16e319bb298a4eb9599).
-Kernel 17599616 bytes, SHA256:
-417bd37280dfec9d29902e7ab3668f02d762e5f36fb7435bf94c881a5b24d4a0
-First attempt 45d877e59508086ed3309ad8f63af3ae83dae22e / run 44910801670
-failed compilation because PROC_NULL is not defined in this native TU.
-733bb3 replaces that sentinel with NULL. Failed artifact was not released.
+ORIGINAL PROGRAM AUDIT:
+Exact d21ap Erase 20H392 BuildManifest SHA256
+4263f6cd5026f26134e2d40d6e59270e5a02f49337ac4367db06fc3d06eb4cbd.
+Original AppOS 087-86715-047.dmg was read by exact IPSW ZIP range and checked
+for size/CRC and manifest SHA384. Its original ARM64 webbookmarksd matches
+all 38 CodeDirectory page hashes. CDHash:
+b0a439a33ae99ae3ca1bc102fe61802394582d36, type2, constraint category1.
+ARM64 SHA256 17805387dcc42b957efae50cd0013b12c1105cf8842f830e29946c21719294ff.
+This identity is absent from the original 2754-entry root/static cache,
+present in the separate original 30-entry App Cryptex module. This is an
+audit of the original component, NOT a hash read from the installed phone.
 
-Patch 0409 registers a named Sandbox compatibility policy before lockdown
-with readonly config and handle. It only accepts measured original 20H392
-identities with their original hash type and current platform status.
-Init/check/note/bulk-check operations succeed for these original programs;
-paths and extension operations return ENOENT without fabricated data,
-unsupported operations return ENOPOLICY, and unknown/non-platform identities
-return EPERM. Only PRIV_WORK_INTERVAL is grantable under the same stock gate.
-This is NOT a complete Seatbelt engine. Original entitlements are unchanged.
-No new blanket entitlement or CPU-monitor exemption was added.
-Missing-container-path, media and graphical startup still require hardware
-verification; do not claim every userland fault is fixed.
+NEW SOURCE AND BUILD:
+Source 557cca2384782de9e9fe858782540dc4be133d23
+CI https://github.com/appleckae2510/ios-a5xelte/actions/runs/44915907188
+Native build job 136881600770, loader compile job 136881600956 and linked
+kernel qualification/write-limits job 136885962661 all succeeded.
+Native artifact 14712387280, ZIP SHA256:
+7e2f1dc0176899888f775d47a8d9cdc7a30794cd099b227b58caf449f7e58865
+Kernel 17599800 bytes, SHA256:
+8654265f58a88f3773073d63bc946a8f6c0e71d13d758c52727c26539f6bbb68
+Initial source ad6b12c504c25a950124166c44efe0b20fa25864/run44915318624
+was superseded by the corrected packer envelope checks. Cryptex App uses
+trca and System trcs; root uses trst. 557cca checks the proper role-specific
+IM4P type and manifest SHA384. No native C change between these two commits;
+the current complete run rebuilt and qualified the correct source.
 
-Explicit --disable-crash-snapshots adds native -no_corpses only with the
-development cache profile. The real linked kernel tunable initializer and
-corpses_enabled were replayed: without flag 1, with shipped command 0.
-This reduces retained crash snapshots, does NOT hide daemon failures or the
-Jetsam panic, and is not proof that all memory pressure is resolved.
-launchd_unsecure_cache=1 remains active and still skips launchd job-cache
-signature/AMFI validation. No complete AMFI IOKit or Image4 service is supplied.
+Patch 0410 preserves the original 2754-entry root cache and adds untouched
+30 App + 61 Cryptex-System entries, including UUIDs, hash types, flags and
+constraints. The packer checks each original full component digest. A
+2244-byte canonical two-module table is carried in a3-cryptex-trustcache
+at the ADT root, NOT as another loader segment. Table SHA384:
+125420ed05e44818aefa99819dfc8558071563cae9698c40ec5b663f2e2150f8a45b7e3e6c6d54a63cc6a0f1e41d83d1
+Native code validates the ADT bounds and complete table fingerprint before
+copying it to SECURITY_READ_ONLY_LATE storage prior to lockdown. Queries
+then use the private measured copy. Existing root layout/count is unchanged.
+Only original Cryptex identities may additionally gain platform status on
+non-root READ-ONLY mounts; unrelated writable mounts/wrong hash types fail.
+The existing stock-only named Sandbox compatibility uses the same identity
+lookup. No arbitrary platform flag, entitlement or CPU-monitor exemption.
 
-Exact final image A3-A320FL-BOOT-v0.13-DEV.img, 27250704 bytes, SHA256:
-4158bb293e44ac9f6daabf762c5b4029c893c3d7f07b2b4d298f021bb83cd53a
-Same validated GCC loader from 8db4823ae09f4cf3ee7e667a5971a2508c8f83c4,
-loader SHA256 38dfe5c7ce6636b99fec60d51370d0124db6082108d0fd64b270610f342587b6.
-Payload remains A3XNPAY2 with CRC32, exact diagnostic RAM volume retained.
+Retained v0.13 changes: patch0409 registers named Sandbox compatibility
+before lockdown; stock-only init/check/note/bulk-check, ENOENT for absent
+path/extensions, ENOPOLICY for unsupported operations, EPERM for unknown or
+non-platform identities. PRIV_WORK_INTERVAL only under the same stock gate.
+This is NOT full Seatbelt. launchd_unsecure_cache=1 still skips launchd
+job-cache signature/AMFI validation; no full global Image4/AMFI service.
+-no_corpses still reduces retained crash snapshots but does not fix daemon
+crashes or prove the prior Jetsam no-victim panic is resolved.
 
-PASSED ON FINAL BYTES:
-11 loader trials, 20 combined hardware/root-selection cases, 9 native
-bounded USERDATA-write cases; native startup/MAC sealing and original
-cache/boot identities (10 originals, 32 negative controls); 144 native
-Sandbox identity/operation cases plus null-process rejection; two actual
-named MAC syscall dispatch cases; two actual native corpse-tunable cases.
-The old kernel fails the new Sandbox requirement and returns ENOPOLICY for
-the actual named Sandbox syscall; the new finds it and rejects the deliberately
-null process with EPERM. Copying user strings and audit context are modeled.
-Positive stock identity decisions are tested on the actual native decision
-helper, NOT on a complete live process/credential simulation.
-Host-C check also ran the exact new helper against all 2754 cache entries
-and invalid-type/non-platform/unknown-op controls. The exact unchanged
-loader retains its 50-case regression; 6 journal-profile checks unchanged.
-No test executes Apple's full launchd/backboardd or native device hardware.
+EXACT FINAL IMAGE:
+A3-A320FL-BOOT-v0.14-DEV.img, 27252752 bytes, SHA256:
+32e7a689eda68feb18bb25c8e8e07de16e502232493f89dcb209e66905406e5d
+Unchanged validated GCC loader from 8db4823ae09f4cf3ee7e667a5971a2508c8f83c4,
+CI44887575375/artifact14700661428, SHA256:
+38dfe5c7ce6636b99fec60d51370d0124db6082108d0fd64b270610f342587b6.
+A3XNPAY2 wrapper CRC/length verified; original diagnostic RAM volume is
+byte-identical. USERDATA stays writable. No phone flash performed here.
 
-DELIVERED Galaxy-A3-A320FL-BOOT-v0.13-DEV-Windows.zip
-14887928 bytes, 53 files, SHA256:
-a19a0a15cdd218c1a965dcdc61784804c5d53cd01b152542057fbaf48c8ef995
-Library ID libfile_bdbaaa6d391c81919ae6032f20908d88
-Includes image, matching kernel/loader, source, replay helpers, complete
-file checksums and German TWRP/Windows instructions and explicit limits.
-ZIP CRC, membership, all member lengths/SHA256 were verified.
-The PowerShell checker has not been run on real Windows.
+PASSED ON THESE FINAL BYTES:
+Native startup/MAC sealing and trust checks; 10 original root identities,
+32 negative controls, 144 stock Sandbox identity/operation controls; all 91
+original Cryptex identities and mount/type limits; original webbookmarksd
+native platform/Sandbox status. Altered constraints rejected and private
+copy remains valid after loader backing bytes are erased. Old v0.13 native
+kernel correctly rejects this App identity and fails the new requirement.
+Host-C tests cover all2754+91 originals and negative controls. Packer rejects
+altered/truncated/swapped components and old kernels without Cryptex support.
+11 full loader trials to the kernel's first marker, 20 combined hardware/
+root-selection cases, 9 bounded native USERDATA-write cases, 2 native corpse
+tunable cases and 2 actual named MAC dispatch cases. Positive identity
+decisions use the native helper; no complete live credential simulation.
+The exact unchanged loader retains 50 regressions and 6 journal-profile
+checks remain valid. These are model/host tests, NOT full Apple userland or
+physical peripheral tests. Global trust API still reports unsupported.
 
-NEXT DEVICE TRIAL:
-User backs up BOOT and full USERDATA (or retains original full iOS root
-image), flashes ONLY this IMG to Boot in TWRP, records boot. Look for
-"A3 stock Sandbox compatibility registered before lockdown" and
-"A3 Sandbox: ... op 2 -> 0", then the first complete error or real GUI.
-USERDATA remains writable. BOOT-only rollback cannot undo volume writes.
-No phone flash or physical storage write performed here.
-SpringBoard, working physical touch, camera, WLAN, BT, audio and modem
-remain unverified. Unknown future panics cannot be ruled out.
+DELIVERED:
+Galaxy-A3-A320FL-BOOT-v0.14-DEV-Windows.zip, 14904435 bytes, 56 files.
+SHA256 5857bccd04d8238102f2b429ecb8155577736b46708033559c33d88d5741bf76
+Library ID libfile_080f81d4a40881918761bb7032052e22
+Image, matching kernel/loader, source changes, replay helpers, complete file
+checksums, German TWRP/Windows instructions and limitations included. ZIP
+CRC/membership/lengths/SHA256 validated. PowerShell checker's version string
+updated to0.14; real Windows execution remains unverified. Private Apple
+components/device dumps/binaries are not in git or separate package files.
 
-
-## 2026-11-21 — original Cryptex caches, v0.14 work in progress
-
-New photo: userspace panic "unexpected exec of non-platform binary"
-/System/Cryptexes/App/usr/libexec/webbookmarksd, PID315. Framebuffer reports
-copy/swap frames (~12.5 fps); this is not proof of SpringBoard or a complete
-GUI. v0.13 has progressed to further userland but a physical flashed-image
-digest is not shown.
-
-The original d21ap 20H392 AppOS component (10MiB APFS) was downloaded by
-exact IPSW byte range and verified with CRC/length and SHA384 from the
-BuildManifest. Original ARM64 webbookmarksd slice verified all 38 signed
-code-page hashes. CodeDirectory hash b0a439a33ae99ae3ca1bc102fe61802394582d36,
-hash type2, original App-cache constraint category1. ARM64 SHA256
-17805387dcc42b957efae50cd0013b12c1105cf8842f830e29946c21719294ff.
-It is absent from the existing 2754-entry root cache and present in the
-separate 30-entry App Cryptex cache. No arbitrary platform flag is justified.
-
-Patch 0410 adds the original 30 App and 61 Cryptex-System entries, preserving
-both original module bytes/UUIDs/types/constraints. The packer authenticates
-both IM4P components against the d21ap Erase BuildManifest fingerprints and
-places their 2244-byte canonical two-module table in an A3 ADT property.
-The native kernel checks ADT bounds, hashes the entire fixed table and
-copies it to protected pre-lockdown memory. Original root-cache layout is
-unchanged. Native identity lookup tries root then the two Cryptex modules.
-Only original Cryptex identities may additionally use a non-root read-only
-mount; unrelated writable mounts and wrong hashes/types still fail.
-The existing Sandbox stock-process gate consequently covers those genuine
-Cryptex programs too. This does not implement the global Image4/AMFI API.
-
-Additional regression requires the exact Cryptex modules, rejects altered
-constraints, checks all 91 original records and mount scope, and explicitly
-covers the audited original webbookmarksd platform/Sandbox identity.
-The old v0.13 kernel/profile fails the new requirement (exit3) and refuses
-that App identity without its module. Host-C checks and patch/Python
-preflight passed. Next: native CI build and final whole-image tests.
-No v0.14 image released yet. Existing development cache-signature skip and
--no_corpses remain disclosed. Actual successful iOS boot remains unverified.
-
-Downloaded Apple components/binaries remain private and outside git.
+NEXT DEVICE TEST:
+Back up BOOT and full USERDATA externally; flash ONLY the IMG to Boot in TWRP.
+No full USERDATA image reinstall for this update. BOOT rollback cannot undo
+root-volume writes. Look for:
+"A3 Cryptex caches: verified 20H392, App 30 + System 61 identities"
+"A3 stock identity webbookmarksd: match=1 category=1 platform=1".
+Record the first complete later error or actual graphical boot. If it still
+fails here, obtain the installed webbookmarksd CodeDirectory/build identity
+instead of assuming original-file equality.
+Actual successful iOS/SpringBoard boot and physical touch, camera, WLAN,
+Bluetooth, audio and modem remain unverified. Unknown future panics cannot
+be ruled out. Continue from this state; do not relabel old artifacts.
 
 ---
 
