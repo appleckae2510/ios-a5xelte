@@ -1,24 +1,27 @@
 # A3Y17LTE active handoff — 2026-11-21
 
-The user's latest photo on SM-A320FL shows the measured fsck identity:
-match=1 category=3 platform=0, followed by launchd's boot-task platform
-panic. This confirms the pinned-cache measurement on the physical device.
-The photo has no BOOT hash. SpringBoard has not been observed.
+The latest user photo shows fsck match=1 category=3 platform=0 and
+launchd's boot-task platform panic. It confirms the original cache
+measurement on the device. The exact installed BOOT hash is absent.
 
-The A3 chainloader now validates every segment, ADT/boot-argument extent,
-entry backing and overlaps before copying. New packages use an IEEE
-CRC-32 checked A3XNPAY2 wrapper. The loader also accepts A3XNPAY1.
-Fifty compiled ARM64 regression cases passed locally. Eleven full loader
-trials reached the existing XNU marker and seventeen root cases passed.
+BOOT v0.10 is built and delivered. It combines the checked A3 chainloader
+with the native boot identity policy installed before lockdown.
+Kernel source bd95d3f9d49173d967aa17fd6bf8adc3fb137627 passed run
+44887841371, including the linked native boot-policy qualification.
+Loader source 8db4823ae09f4cf3ee7e667a5971a2508c8f83c4 passed GCC run
+44887575375. The delivered loader passed 50 compiled ARM64 regressions.
+The final BOOT passed 11 loader-entry and 17 root-selection model cases.
 
-The native A3 signature policy is now registered from mac_policy_initmach,
-before lockdown. It uses the exact SHA-384-verified 20H392 table, matching
-the actual CDHash and hash type, and requires read-only root. Page and
-signature validation remain with the normal XNU path. Host tests exercise
-all 2,754 entries and the mount/hash negative controls. A fresh native
-kernel build and linked-policy qualification are pending in this commit.
-The global Image4 trust-cache API remains unavailable. It is reported
-separately from the boot policy. See A3Y17LTE_PROGRESS.md.
+The policy uses only original pinned 20H392 CDHashes with matching hash
+types on read-only root. Its configuration and handle are sealed at
+lockdown. Unknown/writable-root identities gain no additional flags.
+The separate global Image4 trust-cache API remains unsupported.
+
+Delivered Galaxy-A3-A320FL-BOOT-v0.10-Windows.zip (14857105 bytes), SHA-256
+72eb85d39354edd795bc6eeb2f988570b5f329bf65232cc3de6b6ec46e082fa0.
+A hardware boot of v0.10 is pending. Expected next evidence is fsck
+platform=1 followed by the next boot stage or failure. SpringBoard and
+peripheral services remain unverified. See A3Y17LTE_PROGRESS.md.
 
 ---
 

@@ -634,3 +634,61 @@ negative cases. A native iPhoneOS compilation, linked boot-policy
 qualification and a hardware boot are pending. The previous kernel is
 a negative control for the new --require-platform-policy criterion.
 A full GUI boot and all peripheral services remain unverified.
+
+## 2026-11-21 — BOOT v0.10 built, qualified and delivered
+
+The GCC-only loader compilation initially found a pre-existing freestanding
+dependency on memcpy generated for the aggregate video assignment.
+Commit 8db4823ae09f4cf3ee7e667a5971a2508c8f83c4 uses explicit volatile
+field assignments and tests the resulting six video fields. Run
+44887575375 then passed and produced loader artifact 14700661428.
+The 9,200-byte delivered loader SHA-256 is
+38dfe5c7ce6636b99fec60d51370d0124db6082108d0fd64b270610f342587b6.
+Its 29 portable CI cases passed. The downloaded GCC binary passed all
+50 local compiled ARM64 cases, including four actual board trees and
+the old loader as the partial-write negative control.
+
+Kernel commit bd95d3f9d49173d967aa17fd6bf8adc3fb137627 restricts the
+native registration to A3BootIdentity, containing only the verified
+signature hook. Its configuration and handle reside in read-only
+__DATA_CONST after lockdown. It does not register the donor dyld-policy
+syscall or permissive sandbox. Run 44887841371 completed successfully
+(build job 136797277176, qualification job 136799579831).
+Kernel artifact 14700582414 contains 17,582,848 bytes, SHA-256
+b0b1ea56d35fe6fd2c18c5fbdadb4c72683f25412b1d292e7e722634bd7c4846.
+
+The linked-kernel test ran early MAC registration, sealing, HFS setup,
+PID-1 path preparation and the original cache measurement. All ten
+audited stock identities receive the signature/platform flags on
+read-only root. Forty-two mount/hash-type/unknown-hash controls and
+a modified cache are rejected. The final local paired-image check
+also confirms the two new policy objects have read-only mappings.
+The global Image4 static-cache service still returns status 46 with
+zero caches. This is reported independently. The boot-policy criterion
+passes with exit 0. Actual Apple exec and credential setup remain
+outside the model.
+
+The final BOOT uses the downloaded GCC loader and downloaded native
+kernel, original A3 DTBH and the diagnostic RAM disk. Every kernel segment
+was checked by the native fixture against the linked Mach-O. Eleven
+full loader cases covering four FDTs at EL1/EL2 and display-state variants
+reached the first XNU marker. Seventeen combined board/storage/root
+cases passed without eMMC media writes. The diagnostic RAM disk bytes
+match the exercised fallback programs.
+BOOT size 27,250,704 bytes, SHA-256
+069230fbad4760c8ac54b4b237eba40421e36d4d00967ae9b0e5d981d9a56235.
+
+Delivered Galaxy-A3-A320FL-BOOT-v0.10-Windows.zip, 14,857,105 bytes,
+35 files, SHA-256
+72eb85d39354edd795bc6eeb2f988570b5f329bf65232cc3de6b6ec46e082fa0.
+Archive CRC, manifest membership and all declared sizes/hashes were
+verified. It includes the matching kernel, loader ELF, source, test logs,
+German TWRP BOOT-only instructions and restoration through the user's
+existing BOOT backup. The local Windows checker has not been run on a
+Windows host. The separate original A3IOSROOT remains a prerequisite.
+
+The v0.10 device boot remains pending. The newest photo still belongs to
+the previous measurement stage and shows platform=0. The expected new
+diagnostic is fsck match=1 category=3 platform=1. Neither successful
+SpringBoard nor camera/audio/Wi-Fi/Bluetooth/modem/touch operation is
+established by these model tests. Unknown later faults remain possible.
