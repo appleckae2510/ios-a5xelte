@@ -1,19 +1,15 @@
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
-@@ -175,5 +175,11 @@ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
- {
- 	AppleCLCD *fb = (AppleCLCD *)owner;
- 	uint64_t now = mach_absolute_time();
+@@ -605,17 +605,20 @@
+ 		sender->setTimeoutUS(SWEET_FB_VSYNC_US);
+ 		return;
+ 	}
 +	/*
-+	 * Rearm before the potentially slow software copy. The timer event
-+	 * source uses the same workloop, so callbacks do not overlap; when
-+	 * present() takes >16 ms the next tick need not wait another 16 ms.
++	 * Rearm VSync BEFORE the potentially slow panel copy. Event callbacks
++	 * share this workloop, so an expired timer cannot re-enter present().
++	 * Previously a 16.7 ms delay was added after EVERY ~28 ms copy.
 +	 */
 +	sender->setTimeoutUS(SWEET_FB_VSYNC_US);
- 	uint64_t count = ++fb->fVsyncCount;
- 	uint64_t values[6] = {
-@@ -197,17 +203,12 @@ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
- 	}
  	bool flush = fb->fDirty && (count % fb->fFlushTicks) == 0;
 -	uint8_t *rec = NULL;
 +	uint8_t rec[SWEET_FB_SWAP_REC_SIZE];
@@ -29,8 +25,22 @@
  	IOLockUnlock(fb->fLock);
 -	if (rec != NULL) {
 +	if (flush) {
- 		fb->present(rec);
+ #if defined(ARM64_BOARD_CONFIG_A5XELTE)
+ 		uint64_t before = fb->fPerfLog ? mach_absolute_time() : 0;
+ #endif
+@@ -634,7 +637,6 @@
+ #else
+ 		(void)bytes;
+ #endif
 -		IOFreeData(rec, SWEET_FB_SWAP_REC_SIZE);
  	}
+ #if defined(ARM64_BOARD_CONFIG_A5XELTE)
+ 	/* Aggregate after 300 callbacks; measure wall time because expensive
+@@ -667,7 +669,6 @@
+ 		fb->fPerfWindowStart = finished;
+ 	}
+ #endif
 -	sender->setTimeoutUS(SWEET_FB_VSYNC_US);
  }
+ 
+ void
