@@ -1,0 +1,74 @@
+--- a/bsd/kern/sweet_amfi.c
++++ b/bsd/kern/sweet_amfi.c
+@@ -11,20 +11,51 @@
+     case 1:  /* initialize a stock system process's sandbox compatibility */
+     case 2:  /* ordinary sandbox permission check, including Mach lookup */
+     case 3:  /* process note */
++    case 12: /* observed preference daemon operation, v0.17 compatibility */
++    case 15: /* observed containermanagerd operation (no output implemented) */
++    case 16: /* observed containermanagerd operation (no output implemented) */
++    case 28: /* observed distnoted operation (no output implemented) */
+     case 0x15: /* bulk permission checks */
+         return 0;
+     case 4:  /* a path must not be fabricated */
+     case 5:  /* no extension token issuer */
+     case 6:  /* no extension token consumer */
+-    case 0x43:
++    case 0x43: /* caller needs output values: handled after identity gate */
+         return ENOENT;
+     default:
+         return ENOPOLICY;
+     }
+ }
+ 
++/* iOS 16+ libsystem_sandbox op 0x43 asks whether sandbox containers
++ * are expected. The two fields passed here are user output pointers;
++ * success without zeroing them leaves undefined values for libSystem.
++ * Never fabricate a filesystem path or a sandbox extension token. */
+ static int
+-a3_stock_sandbox_syscall(struct proc *p, int call, __unused user_addr_t arg)
++a3_stock_sandbox_container_expected(user_addr_t arg)
++{
++    user_addr_t out[2];
++    const uint64_t zero = 0;
++    if (arg == 0) {
++        return EINVAL;
++    }
++    int error = copyin(arg, out, sizeof(out));
++    if (error != 0) {
++        return error;
++    }
++    for (unsigned int i = 0; i < 2; i++) {
++        if (out[i] != 0) {
++            error = copyout(&zero, out[i], sizeof(zero));
++            if (error != 0) {
++                return error;
++            }
++        }
++    }
++    return 0;
++}
++
++static int
++a3_stock_sandbox_syscall(struct proc *p, int call, user_addr_t arg)
+ {
+     if (p == NULL) {
+         return EPERM;
+@@ -36,9 +67,14 @@
+     int result = a3_stock_sandbox_result(call, blob->csb_cdhash,
+         blob->csb_hashtype != NULL ? cs_hash_type(blob->csb_hashtype) : 0,
+         csproc_get_platform_binary(p));
+-    static uint64_t seen;
+-    if (call >= 0 && call < 64 && !(seen & (1ULL << call))) {
+-        seen |= 1ULL << call;
++    /* Only an authenticated, pinned Apple platform process may reach
++     * the container-expected helper; untrusted callers still receive EPERM. */
++    if (call == 0x43 && result == ENOENT) {
++        result = a3_stock_sandbox_container_expected(arg);
++    }
++    static uint64_t seen[2];
++    if (call >= 0 && call < 128 && !(seen[call / 64] & (1ULL << (call % 64)))) {
++        seen[call / 64] |= 1ULL << (call % 64);
+         char name[32];
+         proc_name(proc_pid(p), name, sizeof(name));
+         printf("A3 Sandbox: %s op %d -> %d\n", name, call, result);
