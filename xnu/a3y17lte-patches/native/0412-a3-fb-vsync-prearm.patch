@@ -1,6 +1,6 @@
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
-@@ -175,6 +175,12 @@ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
+@@ -175,5 +175,11 @@ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
  {
  	AppleCLCD *fb = (AppleCLCD *)owner;
  	uint64_t now = mach_absolute_time();
@@ -12,7 +12,7 @@
 +	sender->setTimeoutUS(SWEET_FB_VSYNC_US);
  	uint64_t count = ++fb->fVsyncCount;
  	uint64_t values[6] = {
-@@ -197,21 +203,16 @@ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
+@@ -197,17 +203,12 @@ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
  	}
  	bool flush = fb->fDirty && (count % fb->fFlushTicks) == 0;
 -	uint8_t *rec = NULL;
