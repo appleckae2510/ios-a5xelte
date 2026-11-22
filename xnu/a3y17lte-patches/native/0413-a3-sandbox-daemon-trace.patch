@@ -1,6 +1,6 @@
 --- a/bsd/kern/sweet_amfi.c
 +++ b/bsd/kern/sweet_amfi.c
-@@ -98,6 +98,33 @@ a3_stock_sandbox_syscall(struct proc *p, int call, user_addr_t arg)
+@@ -98,5 +98,32 @@ a3_stock_sandbox_syscall(struct proc *p, int call, user_addr_t arg)
  		proc_name(proc_pid(p), name, sizeof(name));
  		printf("A3 Sandbox: %s op %d -> %d\n", name, call, result);
  	}
