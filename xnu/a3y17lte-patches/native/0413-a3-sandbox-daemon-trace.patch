@@ -1,0 +1,35 @@
+--- a/bsd/kern/sweet_amfi.c
++++ b/bsd/kern/sweet_amfi.c
+@@ -98,6 +98,33 @@ a3_stock_sandbox_syscall(struct proc *p, int call, user_addr_t arg)
+ 		proc_name(proc_pid(p), name, sizeof(name));
+ 		printf("A3 Sandbox: %s op %d -> %d\n", name, call, result);
+ 	}
++	/*
++	 * The generic first-op bitmap is global, so it can hide tccd's first
++	 * policy/profile lookup after another daemon has called the same op.
++	 * Print a small bounded per-daemon audit for the operations most likely
++	 * to identify an authentication, container or profile failure.
++	 * No policy decision changes here: in particular, an untrusted caller
++	 * remains EPERM and unsupported functionality remains ENOPOLICY.
++	 */
++	static unsigned int tccd_trace_count;
++	static unsigned int other_trace_count;
++	if ((call == 1 || call == 0x43 || result == EPERM) &&
++	    (tccd_trace_count < 24 || other_trace_count < 24)) {
++		char name[32];
++		proc_name(proc_pid(p), name, sizeof(name));
++		if (strcmp(name, "tccd") == 0 && tccd_trace_count < 24) {
++			tccd_trace_count++;
++			printf("A3 SBTRACE: tccd op %d -> %d platform=%d\n",
++			    call, result, csproc_get_platform_binary(p));
++		} else if ((strcmp(name, "dmd") == 0 ||
++		    strcmp(name, "ScreenTimeAgent") == 0 ||
++		    strcmp(name, "locationd") == 0 ||
++		    strcmp(name, "SpringBoard") == 0) && other_trace_count < 24) {
++			other_trace_count++;
++			printf("A3 SBTRACE: %s op %d -> %d platform=%d\n",
++			    name, call, result, csproc_get_platform_binary(p));
++		}
++	}
+ 	return result;
+ }

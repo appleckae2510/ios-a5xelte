@@ -1,0 +1,36 @@
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -175,6 +175,12 @@ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
+ {
+ 	AppleCLCD *fb = (AppleCLCD *)owner;
+ 	uint64_t now = mach_absolute_time();
++	/*
++	 * Rearm before the potentially slow software copy. The timer event
++	 * source uses the same workloop, so callbacks do not overlap; when
++	 * present() takes >16 ms the next tick need not wait another 16 ms.
++	 */
++	sender->setTimeoutUS(SWEET_FB_VSYNC_US);
+ 	uint64_t count = ++fb->fVsyncCount;
+ 	uint64_t values[6] = {
+@@ -197,21 +203,16 @@ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
+ 	}
+ 	bool flush = fb->fDirty && (count % fb->fFlushTicks) == 0;
+-	uint8_t *rec = NULL;
++	uint8_t rec[SWEET_FB_SWAP_REC_SIZE];
+ 	if (flush) {
+-		rec = (uint8_t *)IOMallocData(SWEET_FB_SWAP_REC_SIZE);
+-		if (rec != NULL) {
+-			memcpy(rec, fb->fPending, SWEET_FB_SWAP_REC_SIZE);
+-			fb->fDirty = false;
+-		}
++		memcpy(rec, fb->fPending, SWEET_FB_SWAP_REC_SIZE);
++		fb->fDirty = false;
+ 	}
+ 	IOLockUnlock(fb->fLock);
+-	if (rec != NULL) {
++	if (flush) {
+ 		fb->present(rec);
+-		IOFreeData(rec, SWEET_FB_SWAP_REC_SIZE);
+ 	}
+-	sender->setTimeoutUS(SWEET_FB_VSYNC_US);
+ }
