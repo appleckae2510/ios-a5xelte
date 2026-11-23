@@ -1,7 +1,7 @@
 diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
-@@ -1,6 +1,81 @@
+@@ -1,3 +1,78 @@
 +
 +/* A3 physical-panel diagnostic: no IOSurface, scaling or userland reads.
 + * Only test with a known-good panel mapping. Memory is BGRA (little endian)
@@ -62,8 +62,6 @@ diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFrame
  void
  AppleCLCD::present(const uint8_t *rec)
  {
- 	uint32_t mask = get32(rec, 0x104);
- 
 +
 +/* One-shot test, after the console is muted. No scanout page-flip is used. */
 +int testpat = 0;
@@ -82,4 +80,3 @@ diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFrame
 +    }
 +    return;
 +}
- 	if (!fConsolePaused) {
