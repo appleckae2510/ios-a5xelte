@@ -1,7 +1,7 @@
 diff --git a/bsd/kern/sweet_amfi.c b/bsd/kern/sweet_amfi.c
 --- a/bsd/kern/sweet_amfi.c
 +++ b/bsd/kern/sweet_amfi.c
-@@ -417,6 +417,14 @@ a3_stock_sandbox_result(int call, const uint8_t *cdhash, uint8_t hash_type,
+@@ -417,6 +417,15 @@ a3_stock_sandbox_result(int call, const uint8_t *cdhash, uint8_t hash_type,
          return EPERM;
      }
      switch (call) {
