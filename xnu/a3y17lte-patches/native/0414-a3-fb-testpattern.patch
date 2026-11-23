@@ -1,53 +1,58 @@
 diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
-@@ -1,4 +1,79 @@
+@@ -1157,11 +1157,88 @@
+ #endif
+ 	return (uint64_t)pw * (uint64_t)(py1 - py0) * 4;
+ }
+ 
 +
-+/* A3 physical-panel diagnostic: no IOSurface, scaling or userland reads.
-+ * Only test with a known-good panel mapping. Memory is BGRA (little endian)
-+ * as expected by SWEET_FB_FORMAT_BGRA. The observed display is 720x1280.
++/* Galaxy A3 (2017) PHASE A – physical FB geometry probe.
++ * Draw once into the actual 720x1280x32bpp scanout memory, bypassing
++ * scaledCopy(), IOSurface layers and the iPhone-X logical geometry.
++ * This does not fix UI geometry; it intentionally overrides iOS output.
 + */
 +static void
-+sweet_a3_fb_pattern(uintptr_t base, uint32_t w, uint32_t h, uint32_t pitch)
++sweet_a3_phys_panel_test(uintptr_t addr, uint32_t width, uint32_t height, uint32_t pitch)
 +{
 +    static const uint32_t bars[8] = {
 +        0xffffffffu, 0xffffff00u, 0xff00ffffu, 0xff00ff00u,
 +        0xffff00ffu, 0xffff0000u, 0xff0000ffu, 0xff000000u
-+    }; /* white, yellow, cyan, green, magenta, red, blue, black */
-+    static const uint8_t digit[10][5] = {
++    };
++    static const uint8_t digits[10][5] = {
 +        {7,5,5,5,7}, {2,6,2,2,7}, {7,1,7,4,7}, {7,1,7,1,7},
 +        {5,5,7,1,1}, {7,4,7,1,7}, {7,4,7,5,7}, {7,1,1,1,1},
-+        {7,5,7,5,7}, {7,5,7,1,7}, {7,5,7,5,7}
++        {7,5,7,5,7}, {7,5,7,1,7}
 +    };
-+    if (!base || !w || !h || w > 4096u || h > 4096u ||
-+        pitch < w * 4u || (pitch & 3u)) {
-+        IOLog("A3 FBPAT: invalid panel geometry %ux%u pitch=%u\n", w, h, pitch);
++    if (!addr || !width || !height || width > 4096u || height > 4096u ||
++        pitch < width * 4u || pitch > 65536u || (pitch & 3u)) {
++        IOLog("A3 FBPAT: invalid panel %ux%u pitch=%u\n", width, height, pitch);
 +        return;
 +    }
-+    for (uint32_t y = 0; y < h; y++) {
-+        volatile uint32_t *row = (volatile uint32_t *)(base + (uint64_t)y * pitch);
-+        for (uint32_t x = 0; x < w; x++) {
-+            uint32_t c = bars[(uint64_t)x * 8u / w];
-+            if (y < 28u) c = 0xff101010u;
-+            else if ((x % 64u) == 0u) c = 0xffffffffu;
-+            if (y == h / 2u || y == h / 2u + 1u) c = 0xffffffffu;
++    for (uint32_t y = 0; y < height; ++y) {
++        volatile uint32_t *row = (volatile uint32_t *)(addr + (uint64_t)y * pitch);
++        for (uint32_t x = 0; x < width; ++x) {
++            uint32_t c = bars[((uint64_t)x * 8u) / width];
++            if (y < 30) c = 0xff101010u;
++            else if (x % 64u == 0) c = 0xffffffffu;
++            if (y == height / 2u || y == height / 2u + 1) c = 0xffffffffu;
 +            row[x] = c;
 +        }
 +    }
-+    for (uint32_t x = 0; x < w; x += 64u) {
-+        unsigned n[3] = { (x / 100u) % 10u, (x / 10u) % 10u, x % 10u };
-+        for (unsigned d = 0; d < 3u; d++) {
-+            for (unsigned yy = 0; yy < 5u; yy++) {
-+                for (unsigned xx = 0; xx < 3u; xx++) {
-+                    if ((digit[n[d]][yy] & (4u >> xx)) == 0u) continue;
-+                    for (unsigned dy = 0; dy < 2u; dy++) {
-+                        for (unsigned dx = 0; dx < 2u; dx++) {
-+                            uint32_t tx = x + 3u + d * 8u + xx * 2u + dx;
-+                            uint32_t ty = 5u + yy * 3u + dy;
-+                            if (tx < w && ty < h) {
++    for (uint32_t x = 0; x < width; x += 64u) {
++        uint32_t d[3] = {x / 100u % 10u, x / 10u % 10u, x % 10u};
++        for (uint32_t i = 0; i < 3; ++i) {
++            for (uint32_t yy = 0; yy < 5; ++yy) {
++                for (uint32_t xx = 0; xx < 3; ++xx) {
++                    if (!(digits[d[i]][yy] & (4u >> xx))) continue;
++                    for (uint32_t ay = 0; ay < 2; ++ay) {
++                        for (uint32_t ax = 0; ax < 2; ++ax) {
++                            uint32_t dx = x + 3u + i * 8u + xx * 2u + ax;
++                            uint32_t dy = 4u + yy * 3u + ay;
++                            if (dx < width && dy < height) {
 +                                volatile uint32_t *row =
-+                                    (volatile uint32_t *)(base + (uint64_t)ty * pitch);
-+                                row[tx] = 0xffffffffu;
++                                    (volatile uint32_t *)(addr + (uint64_t)dy * pitch);
++                                row[dx] = 0xffffffffu;
 +                            }
 +                        }
 +                    }
@@ -55,29 +60,33 @@ diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFrame
 +            }
 +        }
 +    }
-+    IOLog("A3 FBPAT: DIRECT panel %ux%u pitch=%u (w*4=%u), source IOSurface bypassed\n",
-+        w, h, pitch, w * 4u);
++#if defined(ARM64_BOARD_CONFIG_A5XELTE)
++    if (sweet_surface_panel_cacheable) {
++        flush_dcache64((addr64_t)addr, (unsigned)((uint64_t)height * pitch), FALSE);
++    }
++#endif
++    IOLog("A3 FBPAT: physical %ux%u pitch=%u expected=%u; IOSurface skipped\n",
++          width, height, pitch, width * 4u);
 +}
 +
- void
+ uint64_t
  AppleCLCD::present(const uint8_t *rec)
  {
-+
-+/* One-shot test, after the console is muted. No scanout page-flip is used. */
-+int testpat = 0;
-+if (PE_parse_boot_argn("sweetfb_testpat", &testpat, sizeof(testpat)) &&
-+    testpat == 1) {
-+    if (!fConsolePaused) {
-+        fConsolePaused = true;
-+        int quiet = 0;
-+        if (PE_parse_boot_argn("sweetfb_noconsole", &quiet, sizeof(quiet)) && quiet)
++    int testpat = 0;
++    if (PE_parse_boot_argn("sweetfb_testpat", &testpat, sizeof(testpat)) &&
++        testpat == 1) {
++        if (!fConsolePaused) {
++            fConsolePaused = true;
 +            sweet_console_muted = 1;
++        }
++        static bool drawn;
++        if (!drawn) {
++            sweet_a3_phys_panel_test(fPixels, fWidth, fHeight, fRowBytes);
++            drawn = true;
++        }
++        return 0;  /* suppress userland frames for this test only */
 +    }
-+    static bool drawn;
-+    if (!drawn) {
-+        sweet_a3_fb_pattern(fPixels, fWidth, fHeight, fRowBytes);
-+        drawn = true;
-+    }
-+    return;
-+}
  	uint32_t mask = get32(rec, 0x104);
+ 	uint64_t copied = 0;
+ 
+ 
