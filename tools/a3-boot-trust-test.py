@@ -209,7 +209,7 @@ class TrustFixture:
         buf=self.buffer
         for f in self.files:
             cpu.mem_write(buf+96, bytes.fromhex(f['cdhash']))
-            for op,expected in ((1,0),(2,0),(3,0),(0x15,0),(4,2),(5,2),(6,2),(0x43,2),(0,103),(7,103),(0x99,103)):
+            for op,expected in ((1,0),(2,0),(3,0),(0x15,0),(4,2),(5,2),(6,2),(0x43,2),(0,0),(7,103),(0x99,103)):
                 if call('_a3_stock_sandbox_result',op,buf+96,2,1)!=expected:
                     raise ValueError(f'wrong stock Sandbox result for {f["path"]}, op {op}')
                 passed+=1
@@ -223,6 +223,10 @@ class TrustFixture:
                 if call('_a3_stock_sandbox_result',2,pointer,2,platform)!=1:
                     raise ValueError('Sandbox allowed an unknown or missing original identity')
                 passed+=1
+        for pointer,kind,platform in ((buf+96,1,1),(buf+96,2,0),(0,2,1)):
+            if call('_a3_stock_sandbox_result',0,pointer,kind,platform)!=1:
+                raise ValueError('Sandbox op 0 bypassed signed platform identity gate')
+            passed+=1
         if call('_a3_stock_sandbox_syscall',0,2,0)!=1:
             raise ValueError('Sandbox accepted an absent process')
         self.sandbox_ready=True
