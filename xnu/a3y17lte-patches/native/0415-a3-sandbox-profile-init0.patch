@@ -1,0 +1,28 @@
+diff --git a/bsd/kern/sweet_amfi.c b/bsd/kern/sweet_amfi.c
+--- a/bsd/kern/sweet_amfi.c
++++ b/bsd/kern/sweet_amfi.c
+@@ -417,6 +417,14 @@ a3_stock_sandbox_result(int call, const uint8_t *cdhash, uint8_t hash_type,
+         return EPERM;
+     }
+     switch (call) {
++    case 0:  /* libsystem_sandbox's named-profile initialization path.
++              * The development port has no Seatbelt bytecode engine.
++              * Just like op 1, accept the bootstrap request ONLY for
++              * cryptographically measured original Apple platform code.
++              * This does not install, parse or enforce a sandbox profile.
++              * Unknown/foreign processes were already rejected above.
++              * Device trial required: tccd may need more than init 0.
++              */
++        return 0;
+     case 1:  /* initialize a stock system process's sandbox compatibility */
+     case 2:  /* ordinary sandbox permission check, including Mach lookup */
+     case 3:  /* process note */
+@@ -535,7 +543,7 @@ a3_stock_sandbox_syscall(struct proc *p, int call, user_addr_t arg)
+      */
+     static unsigned int tccd_trace_count;
+     static unsigned int other_trace_count;
+-    if ((call == 1 || call == 0x43 || result == EPERM) &&
++    if ((call == 0 || call == 1 || call == 0x43 || result == EPERM) &&
+         (tccd_trace_count < 24 || other_trace_count < 24)) {
+         char name[32];
+         proc_name(proc_pid(p), name, sizeof(name));
