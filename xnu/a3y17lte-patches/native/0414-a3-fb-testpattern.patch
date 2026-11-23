@@ -1,9 +1,7 @@
 diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
-@@ -238,8 +238,83 @@
- }
- 
+@@ -1,6 +1,81 @@
 +
 +/* A3 physical-panel diagnostic: no IOSurface, scaling or userland reads.
 + * Only test with a known-good panel mapping. Memory is BGRA (little endian)
