@@ -17,12 +17,3 @@ diff --git a/bsd/kern/sweet_amfi.c b/bsd/kern/sweet_amfi.c
      case 1:  /* initialize a stock system process's sandbox compatibility */
      case 2:  /* ordinary sandbox permission check, including Mach lookup */
      case 3:  /* process note */
-@@ -535,7 +543,7 @@ a3_stock_sandbox_syscall(struct proc *p, int call, user_addr_t arg)
-      */
-     static unsigned int tccd_trace_count;
-     static unsigned int other_trace_count;
--    if ((call == 1 || call == 0x43 || result == EPERM) &&
-+    if ((call == 0 || call == 1 || call == 0x43 || result == EPERM) &&
-         (tccd_trace_count < 24 || other_trace_count < 24)) {
-         char name[32];
-         proc_name(proc_pid(p), name, sizeof(name));
