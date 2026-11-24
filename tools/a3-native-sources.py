@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+from a3_j3_compat import apply as apply_j3_compat
 
 
 def prepare(root, board):
@@ -23,6 +24,7 @@ def prepare(root, board):
                                  env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if applied.returncode:
             subprocess.run(cmd + [str(patch)], cwd=root, env=env, check=True)
+    apply_j3_compat(root)
     # Export headers again after changing native feature selection.
     (root.parent / "fakeroot/.xnu_headers_installed").unlink(missing_ok=True)
     for name in ("xnu.obj", "xnu-hdrs.obj"):

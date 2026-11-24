@@ -2,7 +2,7 @@ name: A3 native iPhoneOS kernel
 run-name: A320FL native iPhoneOS 16 kernel
 on:
   push:
-    branches: [experiment/a3y17lte-iphoneos-20261119]
+    branches: [experiment/a3y17lte-iphoneos-20261119, experiment/a3-j3-merge-20261124]
     paths: ['.github/workflows/a3-iphoneos.yml', 'tools/a3-native-target.py', 'tools/a3-check-kernel-target.py', 'tools/a3-boot-regression.py', 'tools/a3_boot_filesystems.py', 'tools/a3-boot-trust-test.py', 'tools/a3y17lte-pack-boot.py', 'tools/mkpayload.py', 'tests/a3-20h392-startup.json', 'tools/a3-native-sources.py', 'tools/a3-compile-loader.py', 'xnu/a3y17lte-patches/**']
   workflow_dispatch:
 
@@ -66,6 +66,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+
+      - name: Test J3 compatibility transformations
+        run: python3 tests/test_a3_j3_compat.py
 
       - name: Verify A3 profile
         run: test "$MACHINE_CONFIG" = A5XELTE
