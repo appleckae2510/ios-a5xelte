@@ -3,7 +3,7 @@ run-name: A320FL native iPhoneOS 16 kernel
 on:
   push:
     branches: [experiment/a3y17lte-iphoneos-20261119, experiment/a3-j3-merge-20261124]
-    paths: ['.github/workflows/a3-iphoneos.yml', 'tools/a3-native-target.py', 'tools/a3-check-kernel-target.py', 'tools/a3-boot-regression.py', 'tools/a3_boot_filesystems.py', 'tools/a3-boot-trust-test.py', 'tools/a3y17lte-pack-boot.py', 'tools/mkpayload.py', 'tests/a3-20h392-startup.json', 'tools/a3-native-sources.py', 'tools/a3-compile-loader.py', 'xnu/a3y17lte-patches/**']
+    paths: ['.github/workflows/a3-iphoneos.yml', 'tools/a3-native-target.py', 'tools/a3-check-kernel-target.py', 'tools/a3-boot-regression.py', 'tools/a3_boot_filesystems.py', 'tools/a3-boot-trust-test.py', 'tools/a3y17lte-pack-boot.py', 'tools/mkpayload.py', 'tests/a3-20h392-startup.json', 'tools/a3-native-sources.py', 'tools/a3_j3_compat.py', 'tests/test_a3_j3_compat.py', 'tools/a3-compile-loader.py', 'xnu/a3y17lte-patches/**']
   workflow_dispatch:
 
 permissions:
@@ -78,32 +78,14 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror tests/a3-touch-syntax.c -o "$RUNNER_TEMP/a3-probe"
           "$RUNNER_TEMP/a3-probe"
 
-      - name: Look up the pinned native source checkpoint
-        id: source-cache
-        uses: actions/cache/restore@v4
+      - name: Pinned J7 Prime donor sources for a fresh build
+        uses: actions/checkout@v4
         with:
-          path: native-previous/native-build-state.tgz
-          key: a3-native-6d49898c13ca9cbc4aeb101ec1bdc7642fdd981b059d8c615b89187217dff3cd
-      - uses: actions/download-artifact@v4
-        if: steps.source-cache.outputs.cache-hit != 'true'
-        with:
-          name: a3-native-build-state
-          run-id: 44597647573
-          github-token: ${{ github.token }}
-          path: native-previous
-      - name: Restore native compilation state
-        run: |
-          set -euo pipefail
-          echo '6d49898c13ca9cbc4aeb101ec1bdc7642fdd981b059d8c615b89187217dff3cd  native-previous/native-build-state.tgz' | shasum -a 256 -c -
-          mkdir -p dxb
-          tar -xzf native-previous/native-build-state.tgz -C dxb --exclude=build.sh
-          test "$(cat dxb/a3-build-commit.txt)" = 6f79145b4a38f26648b5e4ccb6423b117bf5fe46
-      - name: Cache the verified source checkpoint
-        if: steps.source-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: native-previous/native-build-state.tgz
-          key: a3-native-6d49898c13ca9cbc4aeb101ec1bdc7642fdd981b059d8c615b89187217dff3cd
+          repository: hoaan1911/ios-on7xelte
+          ref: f11e5d503398d814813899ffe531ad6521521b51
+          path: donor-patchset
+          persist-credentials: false
+
       - name: Fetch build script
         run: |
           set -e
@@ -114,8 +96,8 @@ jobs:
             --output "$RUNNER_TEMP/a3-builder.tgz"
           tar -xzf "$RUNNER_TEMP/a3-builder.tgz" --strip-components=1 -C dxb
 
-          # The verified source checkpoint already contains the resolved donor series.
-          # The native source helper applies subsequent native-only changes.
+          # Reconstruct the original A3/J7 donor series instead of depending on an expired checkpoint.
+          cp donor-patchset/xnu/patches/*.patch donor-patchset/xnu/patches/*.sh dxb/patches/
           cp xnu/a3y17lte-patches/*.patch dxb/patches/
           python3 tools/a3-native-target.py dxb/build.sh
 
@@ -185,7 +167,7 @@ jobs:
           name: a3-native-build-state
           path: native-build-state.tgz
           if-no-files-found: ignore
-          retention-days: 3
+          retention-days: 14
 
       # The builder can skip rejected patches: this board layer is mandatory.
       - name: Verify mandatory A3 source changes
