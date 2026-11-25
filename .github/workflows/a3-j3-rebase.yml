@@ -1,0 +1,85 @@
+name: A3 J3-first rebase (compile only)
+on:
+  push:
+    branches: [experiment/a3-j3-first-rebase-20261125]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: a3-j3-first-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  MACOS_VERSION: '13.5'
+  KERNEL_CONFIG: DEVELOPMENT
+  MACHINE_CONFIG: J3Y17LTE
+jobs:
+  build:
+    runs-on: macos-15-intel
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: imusingwinxp-ops/j3y17lte-xnu
+          ref: ad394acd811af83ac55dac9410ac2920e9c51e11
+          path: j3-donor
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: blacktop/darwin-xnu-build
+          ref: 663906528d1cd5ea8fde7de6f16de73db9511549
+          path: dxb
+          persist-credentials: false
+      - name: Pin Apple XNU source
+        uses: actions/checkout@v4
+        with:
+          repository: apple-oss-distributions/xnu
+          ref: 1b191cb58250d0705d8a51287127505aa4bc0789
+          path: dxb/xnu
+          persist-credentials: false
+      - name: Stage exclusively J3 donor and generic build helpers
+        run: |
+          set -euo pipefail
+          test "$(git -C j3-donor rev-parse HEAD)" = ad394acd811af83ac55dac9410ac2920e9c51e11
+          test "$(find j3-donor/xnu/patches -name '*.patch' | wc -l | tr -d ' ')" = 179
+          test "$(find j3-donor/xnu/patches -name '*.sh' | wc -l | tr -d ' ')" = 3
+          cp j3-donor/xnu/patches/*.patch j3-donor/xnu/patches/*.sh dxb/patches/
+          python3 -m py_compile tools/a3-j3-rebase.py tools/a3-j3-rebase-target.py
+          python3 tools/a3-j3-rebase-target.py dxb/build.sh
+          bash -n dxb/build.sh
+      - name: Native toolchain
+        run: |
+          brew install jq gum bash cmake ninja
+          printf '#!/bin/sh\nexit 0\n' | sudo tee /usr/local/bin/xcodes >/dev/null
+          sudo chmod +x /usr/local/bin/xcodes
+          XC=$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)
+          test -n "$XC"
+          echo "DEVELOPER_DIR=$XC/Contents/Developer" >> "$GITHUB_ENV"
+          sudo xcode-select -s "$XC"
+          xcodebuild -version
+      - name: Compile J3-first research kernel
+        working-directory: dxb
+        run: |
+          set -o pipefail
+          bash build.sh 2>&1 | tee ../j3-rebase-build.log
+      - name: Verify research kernel identity
+        run: |
+          set -euo pipefail
+          K=dxb/build/xnu.obj/DEVELOPMENT_ARM64_J3Y17LTE/mach.development.j3y17lte
+          test -s "$K"
+          grep -aq A3_J3_REBASE_V1 "$K"
+          mkdir -p compile-only
+          cp "$K" compile-only/kernel.a3-j3-rebase.NOT-FLASHABLE
+          shasum -a 256 compile-only/* > compile-only/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: a3-j3-rebase-build-log
+          path: j3-rebase-build.log
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: a3-j3-rebase-compile-only-NOT-FLASHABLE
+          path: compile-only/
