@@ -64,6 +64,30 @@ jobs:
         run: |
           set -o pipefail
           bash build.sh 2>&1 | tee ../j3-rebase-build.log
+      - name: Summarize compiler diagnostics
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import pathlib, re
+          p = pathlib.Path("j3-rebase-build.log")
+          if not p.exists():
+              raise SystemExit(0)
+          rx = re.compile(r":\d+:\d+: (?:fatal )?error:|Undefined symbols|^ld: (?!warning:)|^clang: error:|^make.*\*\*\*|^ValueError:")
+          hits = []
+          with p.open(errors="replace") as f:
+              for line in f:
+                  line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+                  if rx.search(line) and line not in hits and len(hits) < 100:
+                      hits.append(line[:1200])
+          pathlib.Path("j3-errors.txt").write_text("\n".join(hits) + "\n")
+          print("\n".join(hits))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: a3-j3-rebase-errors
+          path: j3-errors.txt
+          if-no-files-found: ignore
       - name: Verify research kernel identity
         run: |
           set -euo pipefail

@@ -9,6 +9,15 @@ def replace(s, old, new):
 
 def prepare(root):
     changes = {
+        "config/MASTER.arm64.j3y17lte": [
+            ("[ vm_pressure_events memorystatus ", "[ vm_pressure_events jetsam memorystatus "),
+        ],
+        "bsd/sweet_hfs/core/kext-config.h": [
+            ("#if (TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR) // iOS (real hardware)", "#if (TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR) && !defined(J3_DONOR_MACOS_HFS_PROFILE) // iOS (real hardware)"),
+        ],
+        "bsd/sweet_hfs/sweet_hfs_compat.h": [
+            ("#include \"core/kext-config.h\"", "/* Match the donor's original macOS HFS configuration for this compile-only target. */\n#define J3_DONOR_MACOS_HFS_PROFILE 1\n#include \"core/kext-config.h\""),
+        ],
         "libsyscall/xcodescripts/mach_install_mig.sh": [
             ("    MACHINE_ARCH=armv7\n", "    MACHINE_ARCH=armv7\n    if [ \"${PLATFORM_NAME:-}\" = iphoneos ]; then\n        export IPHONEOS_DEPLOYMENT_TARGET=10.0\n    fi\n"),
         ],

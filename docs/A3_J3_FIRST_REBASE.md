@@ -14,3 +14,6 @@ Next gates before packaging: recover the actual J3 loader and ADT or implement i
 
 ## CI repair 2026-11-25
 Run 45620801846 applied the full numbered J3 donor series through 0182 and the A3 overlay, then failed in libsyscall MIG header generation: armv7 rejects IPHONEOS_DEPLOYMENT_TARGET=16.7. Reuse the proven old A3 header-only fix: set the deployment target to 10.0 inside the armv7 MIG branch for iphoneos only. The ARM64 kernel target remains iOS 16.7. This is a build-system fix, not a physical boot fix. Next CI run must qualify it.
+
+## CI repair 2
+Run 45623485399 passed MIG generation, then native compilation failed because CONFIG_JETSAM is absent and native iPhoneOS HFS selects Apple's private AppleKeyStore API, which is unavailable in the open-source donor. Enable the standard Jetsam feature as in the working A3 native build. For the staged HFS component only, explicitly select the original donor's macOS HFS build profile; this is a compile-only test of that open-source implementation, not implementation of iOS Data Protection. Do not use on encrypted/protected user data, do not flash, and do not claim full iOS filesystem compatibility. No change to global XNU protection policy. Retain donor patch checking and add bounded CI diagnostics.
