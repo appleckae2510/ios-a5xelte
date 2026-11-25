@@ -18,6 +18,9 @@ def prepare(root):
         "bsd/sweet_hfs/sweet_hfs_compat.h": [
             ("#include \"core/kext-config.h\"", "/* Match the donor's original macOS HFS configuration for this compile-only target. */\n#define J3_DONOR_MACOS_HFS_PROFILE 1\n#include \"core/kext-config.h\""),
         ],
+        "bsd/sweet_hfs/hfs_encodings/hfs_encodings.h": [
+            ("#if !TARGET_OS_IPHONE", "#if !TARGET_OS_IPHONE || defined(J3_DONOR_MACOS_HFS_PROFILE)"),
+        ],
         "libsyscall/xcodescripts/mach_install_mig.sh": [
             ("    MACHINE_ARCH=armv7\n", "    MACHINE_ARCH=armv7\n    if [ \"${PLATFORM_NAME:-}\" = iphoneos ]; then\n        export IPHONEOS_DEPLOYMENT_TARGET=10.0\n    fi\n"),
         ],
