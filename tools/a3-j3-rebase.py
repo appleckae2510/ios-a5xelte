@@ -9,6 +9,9 @@ def replace(s, old, new):
 
 def prepare(root):
     changes = {
+        "libsyscall/xcodescripts/mach_install_mig.sh": [
+            ("    MACHINE_ARCH=armv7\n", "    MACHINE_ARCH=armv7\n    if [ \"${PLATFORM_NAME:-}\" = iphoneos ]; then\n        export IPHONEOS_DEPLOYMENT_TARGET=10.0\n    fi\n"),
+        ],
         "iokit/KernelConfigTables.cpp": [
             ("'samsung,j3y17lte';", "'samsung,a3y17lte';"),
             ("'samsung,j3y17lte-display';", "'samsung,a3y17lte-display';"),
