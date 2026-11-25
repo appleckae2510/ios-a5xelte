@@ -20,6 +20,7 @@ def prepare(root):
         ],
         "bsd/sweet_hfs/hfs_encodings/hfs_encodings.h": [
             ("#if !TARGET_OS_IPHONE", "#if !TARGET_OS_IPHONE || defined(J3_DONOR_MACOS_HFS_PROFILE)"),
+            ("#ifdef __APPLE_API_UNSTABLE", "#if defined(__APPLE_API_UNSTABLE) || defined(J3_DONOR_MACOS_HFS_PROFILE)"),
         ],
         "libsyscall/xcodescripts/mach_install_mig.sh": [
             ("    MACHINE_ARCH=armv7\n", "    MACHINE_ARCH=armv7\n    if [ \"${PLATFORM_NAME:-}\" = iphoneos ]; then\n        export IPHONEOS_DEPLOYMENT_TARGET=10.0\n    fi\n"),
