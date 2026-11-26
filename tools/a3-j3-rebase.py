@@ -55,6 +55,11 @@ def prepare(root):
         s = p.read_text()
         for old, new in pairs:
             s = replace(s, old, new)
+        if rel == "config/MASTER.arm64.j3y17lte":
+            # A feature in the VM group needs a matching options declaration.
+            if "CONFIG_UBSAN_MINIMAL" in s:
+                raise ValueError("unexpected existing minimal UBSan option")
+            s += "\noptions CONFIG_UBSAN_MINIMAL # <config_ubsan_minimal>\n"
         staged[p] = s
     for p, s in staged.items():
         p.write_text(s)
