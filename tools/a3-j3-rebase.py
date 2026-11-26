@@ -171,6 +171,62 @@ def prepare(root):
     changes["bsd/kern/kern_prot.c"] = [
         ("getpid(proc_t p, __unused struct getpid_args *uap, int32_t *retval)\n{\n\t*retval = proc_getpid(p);", "getpid(proc_t p, __unused struct getpid_args *uap, int32_t *retval)\n{\n\t*retval = proc_getpid(p);\n\tif (*retval == 1) {\n\t\tstatic bool marked;\n\t\tif (!marked) {\n\t\t\tmarked = true;\n\t\t\textern void sweet_early_mark(unsigned int, const char *);\n\t\t\tsweet_early_mark(386, \"A3 PID1 executed getpid syscall\");\n\t\t}\n\t}"),
     ]
+    # A3 v0.32: readable boot progress in three rows between the panic
+    # barcode (ends at y=435) and stage grid (starts at y=488).
+    # Use the same mapped framebuffer and existing font; no printf, locks,
+    # allocator, new MMIO mapping, timer, or policy changes.
+    progress_text = r'''
+	/* A3 status strip, 3 x 90 characters, inside the existing aperture. */
+	if (label && ((stage >= 367u && stage <= 388u) ||
+	    (stage >= 41u && stage <= 59u) || stage == 326u || stage == 80u)) {
+		extern unsigned char iso_font[256 * 16];
+		static unsigned int a3_progress_row;
+		unsigned int y0 = 440u + (a3_progress_row++ % 3u) * 16u;
+		uint32_t fg = (stage == 326u || stage == 80u || stage == 385u ||
+		    stage == 387u) ? 0xffff6060u : 0xffffffffu;
+		unsigned int ended = 0u;
+		for (unsigned int col = 0; col < 90u; col++) {
+			unsigned char ch;
+			if (col == 0u) {
+				ch = '[';
+			} else if (col == 1u) {
+				ch = '0' + (stage / 100u) % 10u;
+			} else if (col == 2u) {
+				ch = '0' + (stage / 10u) % 10u;
+			} else if (col == 3u) {
+				ch = '0' + stage % 10u;
+			} else if (col == 4u) {
+				ch = ']';
+			} else if (col == 5u) {
+				ch = ' ';
+			} else {
+				ch = ended ? ' ' : (unsigned char)label[col - 6u];
+				if (!ch) {
+					ended = 1u;
+					ch = ' ';
+				}
+			}
+			const unsigned char *glyph = iso_font + (unsigned int)ch * 16u;
+			for (unsigned int gy = 0; gy < 16u; gy++) {
+				volatile uint32_t *row = early_fb +
+				    (y0 + gy) * J3_EARLY_STRIDE_PIXELS + col * 8u;
+				for (unsigned int gx = 0; gx < 8u; gx++) {
+					row[gx] = (glyph[gy] & (1u << gx)) ? fg : 0xff000000u;
+				}
+			}
+		}
+		__asm__ volatile("dsb sy" ::: "memory");
+	}
+
+'''
+    changes["osfmk/arm64/sweet_early.c"] += [
+        ("\tunsigned int marker_stage;\n\tunsigned int marker_y;", progress_text + "\tunsigned int marker_stage;\n\tunsigned int marker_y;"),
+    ]
+    changes["bsd/kern/kern_exec.c"] += [
+        ('\tsweet_early_mark(382, "A3 init scratch allocation returned");', '\tsweet_early_mark(scratch_addr ? 382u : 387u, scratch_addr ? "OK: init scratch address allocated" : "ERROR: no init scratch address");'),
+        ('\tsweet_early_mark(383, "A3 invoking initial execve");', '\tsweet_early_mark(388, path);\n\tsweet_early_mark(383, "START: initial execve");'),
+        ('\tsweet_early_mark(error == 0 ? 384u : 385u, "A3 initial execve result");', '\tsweet_early_mark(error == 0 ? 384u : 385u, error == 0 ? "OK: initial execve returned success" : "ERROR: initial execve failed");'),
+    ]
     # Stage all edits before writing; never silently skip a failed anchor.
     staged = {}
     for rel, pairs in changes.items():
