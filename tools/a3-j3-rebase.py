@@ -331,6 +331,23 @@ def prepare(root):
         ('\t\tmp->mnt_devvp = rootvp;\n#if defined(ARM64_BOARD_CONFIG_SWEET)',
          '\t\tmp->mnt_devvp = rootvp;\n#if defined(ARM64_BOARD_CONFIG_J3Y17LTE)\n\t\t{\n\t\t\textern bool j3y17lte_emmc_root_writable(dev_t);\n\t\t\textern void sweet_early_mark(unsigned int, const char *);\n\t\t\tuint32_t rootrw = 0;\n\t\t\tif (PE_parse_boot_argn("rootrw", &rootrw, sizeof(rootrw)) && rootrw == 1u) {\n\t\t\t\tif (j3y17lte_emmc_root_writable(rootdev)) {\n\t\t\t\t\tmp->mnt_flag &= ~MNT_RDONLY;\n\t\t\t\t\tsweet_early_mark(399u, "USERDATA RW authorized; mounting root");\n\t\t\t\t} else {\n\t\t\t\t\tsweet_early_mark(398u, "RW refused: USERDATA geometry/header mismatch");\n\t\t\t\t}\n\t\t\t}\n\t\t}\n#elif defined(ARM64_BOARD_CONFIG_SWEET)'),
     ]
+    # A3 v0.40: measure GPT geometry and the mount failure without guessing
+    # a write extent. Explicitly keep the write driver disabled for this test.
+    changes["bsd/dev/j3y17lte_emmc.c"] += [
+        ("/* A3: write access must be explicitly requested and verified below. */",
+         "/* A3 v0.40: measure geometry before permitting any writes. */\n\tenable_write = 0;\n\t{\n\t\tchar a3_geometry[84];\n\t\textern void sweet_early_mark(unsigned int, const char *);\n\t\t(void)snprintf(a3_geometry, sizeof(a3_geometry), \"GPT %.15s start=%llu sectors=%llu\", emmc_partition_name, (unsigned long long)emmc_first_lba, (unsigned long long)emmc_nsectors);\n\t\tsweet_early_mark(401u, a3_geometry);\n\t}"),
+    ]
+    changes["osfmk/arm64/sweet_early.c"] += [
+        ("stage > 400", "stage > 402"),
+        ("(stage >= 367u && stage <= 400u)", "(stage >= 367u && stage <= 402u)"),
+        ("unsigned int y0 = stage == 394u ?", "unsigned int y0 = stage == 401u ? 712u : (stage == 402u ? 664u : (stage == 394u ?"),
+        ("424u : 440u + row * 16u));", "424u : 440u + row * 16u))));"),
+        ("\tunsigned int marker_stage;\n\tunsigned int marker_y;", "\tif (stage >= 401u) {\n\t\treturn; /* dedicated text only, within the mapped framebuffer */\n\t}\n\tunsigned int marker_stage;\n\tunsigned int marker_y;"),
+    ]
+    changes["bsd/vfs/vfs_syscalls.c"] = [
+        ("\tif (need_nameidone) {\n\t\tnameidone(&nd);\n\t}\n\n\treturn error;\n}\n\n/*\n * common mount implementation",
+         "\tif (need_nameidone) {\n\t\tnameidone(&nd);\n\t}\n\tif (proc_getpid(p) == 3) {\n\t\tchar a3_mount_path[40] = {0};\n\t\tchar a3_mount_line[84];\n\t\tsize_t a3_path_len = 0;\n\t\textern void sweet_early_mark(unsigned int, const char *);\n\t\tif (copyinstr(uap->path, a3_mount_path, sizeof(a3_mount_path), &a3_path_len)) {\n\t\t\tstrlcpy(a3_mount_path, \"(unavailable)\", sizeof(a3_mount_path));\n\t\t}\n\t\t(void)snprintf(a3_mount_line, sizeof(a3_mount_line), \"MOUNT %.12s %.32s errno=%d flags=%x\", fstypename, a3_mount_path, error, (unsigned int)flags);\n\t\tsweet_early_mark(402u, a3_mount_line);\n\t}\n\n\treturn error;\n}\n\n/*\n * common mount implementation"),
+    ]
     # Stage all edits before writing; never silently skip a failed anchor.
     staged = {}
     for rel, pairs in changes.items():
