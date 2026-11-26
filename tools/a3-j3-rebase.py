@@ -67,6 +67,70 @@ def prepare(root):
             ("if (j3y17lte_bank1_hotadd_enabled) {", "j3y17lte_bank1_hotadd_enabled = false; /* A3 reserved-memory map not yet wired */\n\tif (j3y17lte_bank1_hotadd_enabled) {"),
         ],
     }
+    # Decode the exact sleh.c panic signature without calling the normal
+    # logging path or modifying exception handling.
+    panic_anchor = "\t/*\n\t * Stage 80 is reserved as the unambiguous panic indicator.\n\t */"
+    exception_diag = r'''
+	/* A3: capture the actual message and PC/LR of panic_with_thread_kernel_state. */
+	if (!early_disabled && fmt != 0 && args != 0) {
+		static const char prefix[] = "%s at pc 0x%016llx, lr 0x%016llx";
+		unsigned int matches = 1u;
+		for (unsigned int i = 0; i < sizeof(prefix) - 1u; i++) {
+			if (fmt[i] != prefix[i]) {
+				matches = 0u;
+				break;
+			}
+		}
+		if (matches) {
+			va_list copy;
+			va_copy(copy, *args);
+			const char *msg = va_arg(copy, const char *);
+			uint64_t pc = va_arg(copy, uint64_t);
+			uint64_t lr = va_arg(copy, uint64_t);
+			va_end(copy);
+			/* Message: 16 bytes, 8 bits per column, y=90..165. */
+			unsigned int ended = (msg == 0);
+			for (unsigned int i = 0; i < 16u; i++) {
+				unsigned char ch = ended ? 0u : (unsigned char)msg[i];
+				if (ch == 0u) {
+					ended = 1u;
+				}
+				for (unsigned int bit = 0; bit < 8u; bit++) {
+					uint32_t colour = (ch & (1u << (7u - bit))) ?
+					    0xff00ffffu : 0xffff2040u;
+					for (unsigned int dy = 0; dy < 6u; dy++) {
+						volatile uint32_t *row = early_fb +
+						    (90u + bit * 10u + dy) * J3_EARLY_STRIDE_PIXELS;
+						for (unsigned int dx = 0; dx < J3_MARK_W; dx++) {
+							row[96u + i * J3_MARK_STEP + dx] = colour;
+						}
+					}
+				}
+			}
+			/* PC and LR: 16 nibbles each, y=250..285 and y=300..335. */
+			for (unsigned int reg = 0; reg < 2u; reg++) {
+				uint64_t value = reg == 0u ? pc : lr;
+				for (unsigned int i = 0; i < 16u; i++) {
+					unsigned int nibble = (unsigned int)((value >> ((15u - i) * 4u)) & 0xfu);
+					for (unsigned int bit = 0; bit < 4u; bit++) {
+						uint32_t colour = (nibble & (1u << (3u - bit))) ?
+						    0xff00ffffu : 0xffff2040u;
+						for (unsigned int dy = 0; dy < 6u; dy++) {
+							volatile uint32_t *row = early_fb +
+							    (250u + reg * 50u + bit * 10u + dy) * J3_EARLY_STRIDE_PIXELS;
+							for (unsigned int dx = 0; dx < J3_MARK_W; dx++) {
+								row[96u + i * J3_MARK_STEP + dx] = colour;
+							}
+						}
+					}
+				}
+			}
+			__asm__ volatile("dsb sy" ::: "memory");
+		}
+	}
+
+'''
+    changes["osfmk/arm64/sweet_early.c"] = [(panic_anchor, exception_diag + panic_anchor)]
     # Stage all edits before writing; never silently skip a failed anchor.
     staged = {}
     for rel, pairs in changes.items():
