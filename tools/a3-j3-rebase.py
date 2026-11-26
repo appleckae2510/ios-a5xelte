@@ -348,6 +348,24 @@ def prepare(root):
         ("\tif (need_nameidone) {\n\t\tnameidone(&nd);\n\t}\n\n\treturn error;\n}\n\n/*\n * common mount implementation",
          "\tif (need_nameidone) {\n\t\tnameidone(&nd);\n\t}\n\tif (proc_getpid(p) == 3) {\n\t\tchar a3_mount_path[40] = {0};\n\t\tchar a3_mount_line[84];\n\t\tsize_t a3_path_len = 0;\n\t\textern void sweet_early_mark(unsigned int, const char *);\n\t\tif (copyinstr(uap->path, a3_mount_path, sizeof(a3_mount_path), &a3_path_len)) {\n\t\t\tstrlcpy(a3_mount_path, \"(unavailable)\", sizeof(a3_mount_path));\n\t\t}\n\t\t(void)snprintf(a3_mount_line, sizeof(a3_mount_line), \"MOUNT %.12s %.32s errno=%d flags=%x\", fstypename, a3_mount_path, error, (unsigned int)flags);\n\t\tsweet_early_mark(402u, a3_mount_line);\n\t}\n\n\treturn error;\n}\n\n/*\n * common mount implementation"),
     ]
+    # A3 v0.41: use the actual CRC-checked GPT geometry measured on v0.40.
+    # Preserve the HFSX version guard, explicit opt-in and per-sector bounds.
+    # No changes to bindfs authorization, error returns or panic behavior.
+    changes["bsd/dev/j3y17lte_emmc.c"] += [
+        ("emmc_first_lba == 7069696ULL && emmc_nsectors == 23707614ULL",
+         "emmc_first_lba == 7069696ULL && emmc_nsectors == 23707615ULL"),
+        ("/* A3 v0.40: measure geometry before permitting any writes. */\n\tenable_write = 0;",
+         "/* A3 v0.41: exact measured geometry and HFSX guard required for opt-in. */"),
+    ]
+    changes["osfmk/arm64/sweet_early.c"] += [
+        ("stage > 402", "stage > 403"),
+        ("(stage >= 367u && stage <= 402u)", "(stage >= 367u && stage <= 403u)"),
+        ("unsigned int y0 = stage == 401u ? 712u :", "unsigned int y0 = stage == 403u ? 648u : stage == 401u ? 712u :"),
+    ]
+    changes["bsd/vfs/vfs_syscalls.c"] += [
+        ("\t\tsweet_early_mark(402u, a3_mount_line);",
+         "\t\tsweet_early_mark(402u, a3_mount_line);\n\t\tif (strcmp(fstypename, \"bindfs\") == 0) {\n\t\t\tchar a3_source[56] = {0};\n\t\t\tsize_t a3_source_len = 0;\n\t\t\tint a3_copy_error = copyinstr(uap->data, a3_source, sizeof(a3_source), &a3_source_len);\n\t\t\tif (a3_copy_error == 0) {\n\t\t\t\t(void)snprintf(a3_mount_line, sizeof(a3_mount_line), \"BINDFS source: %s target_lookup=%s\", a3_source, need_nameidone ? \"OK\" : \"FAIL\");\n\t\t\t} else {\n\t\t\t\t(void)snprintf(a3_mount_line, sizeof(a3_mount_line), \"BINDFS source copy errno=%d target_lookup=%s\", a3_copy_error, need_nameidone ? \"OK\" : \"FAIL\");\n\t\t\t}\n\t\t\tsweet_early_mark(403u, a3_mount_line);\n\t\t}"),
+    ]
     # Stage all edits before writing; never silently skip a failed anchor.
     staged = {}
     for rel, pairs in changes.items():
