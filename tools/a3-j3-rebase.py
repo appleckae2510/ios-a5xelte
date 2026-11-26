@@ -10,7 +10,7 @@ def replace(s, old, new):
 def prepare(root):
     changes = {
         "config/MASTER.arm64.j3y17lte": [
-            ("[ vm_pressure_events memorystatus ", "[ vm_pressure_events jetsam memorystatus "),
+            ("[ vm_pressure_events memorystatus ", "[ vm_pressure_events jetsam memorystatus config_ubsan_minimal "),
         ],
         "bsd/sweet_hfs/core/kext-config.h": [
             ("#if (TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR) // iOS (real hardware)", "#if (TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR) && !defined(J3_DONOR_MACOS_HFS_PROFILE) // iOS (real hardware)"),
