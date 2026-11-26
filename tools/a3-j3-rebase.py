@@ -227,6 +227,27 @@ def prepare(root):
         ('\tsweet_early_mark(383, "A3 invoking initial execve");', '\tsweet_early_mark(388, path);\n\tsweet_early_mark(383, "START: initial execve");'),
         ('\tsweet_early_mark(error == 0 ? 384u : 385u, "A3 initial execve result");', '\tsweet_early_mark(error == 0 ? 384u : 385u, error == 0 ? "OK: initial execve returned success" : "ERROR: initial execve failed");'),
     ]
+    # A3 v0.33: keep the successful init milestones visible, with the
+    # last diagnostic I/O result on a separate row. No storage or policy changes.
+    changes["osfmk/arm64/sweet_early.c"] += [
+        ("stage <= 388u", "stage <= 394u"),
+        ("unsigned int y0 = 440u + (a3_progress_row++ % 3u) * 16u;",
+         "unsigned int row = a3_progress_row++ % 3u;\n\t\tif (stage == 383u || stage == 384u || stage == 385u) row = 0u;\n\t\telse if (stage == 386u || stage == 388u) row = 1u;\n\t\telse if (stage >= 389u && stage <= 394u) row = 2u;\n\t\tunsigned int y0 = 440u + row * 16u;"),
+        ("stage == 387u) ? 0xffff6060u : 0xffffffffu;",
+         "stage == 387u || stage == 390u || stage == 392u) ? 0xffff6060u :\n\t\t    (stage == 384u || stage == 386u || stage == 389u || stage == 391u || stage == 393u ? 0xff70ff90u : 0xffffffffu);"),
+    ]
+    changes["bsd/kern/kern_prot.c"] += [
+        ('"A3 PID1 executed getpid syscall"', '"OK: PID1 running in diagnostic userland"'),
+    ]
+    changes["bsd/kern/sys_generic.c"] = [
+        ("\treturn read_internal(p, uap->fd, uap->cbuf, uap->nbyte, (off_t)-1, 0,\n\t           retval);",
+         "\tint error = read_internal(p, uap->fd, uap->cbuf, uap->nbyte, (off_t)-1, 0,\n\t           retval);\n\tif (proc_getpid(p) == 1) {\n\t\tstatic int last = -1;\n\t\tint state = error ? 2 : (*retval > 0 ? 1 : 0);\n\t\tif (state != last) {\n\t\t\tlast = state;\n\t\t\textern void sweet_early_mark(unsigned int, const char *);\n\t\t\tsweet_early_mark(error ? 390u : 389u, error ? \"ERROR: PID1 read failed\" : (*retval > 0 ? \"OK: PID1 read returned data\" : \"PID1 read returned EOF\"));\n\t\t}\n\t}\n\treturn error;"),
+        ("\treturn write_internal(p, uap->fd, uap->cbuf, uap->nbyte, (off_t)-1, 0,\n\t           NULL, retval);",
+         "\tint error = write_internal(p, uap->fd, uap->cbuf, uap->nbyte, (off_t)-1, 0,\n\t           NULL, retval);\n\tif (proc_getpid(p) == 1) {\n\t\tstatic int last = -1;\n\t\tint state = error ? 2 : (*retval > 0 ? 1 : 0);\n\t\tif (state != last) {\n\t\t\tlast = state;\n\t\t\textern void sweet_early_mark(unsigned int, const char *);\n\t\t\tsweet_early_mark(error ? 392u : 391u, error ? \"ERROR: PID1 write failed\" : (*retval > 0 ? \"OK: PID1 write transferred data\" : \"PID1 write returned zero\"));\n\t\t}\n\t}\n\treturn error;"),
+    ]
+    changes["bsd/kern/sys_pipe.c"] = [
+        ("\tproc_fdunlock(p);\n\treturn 0;\n\nfreepipes:", "\tproc_fdunlock(p);\n\tif (proc_getpid(p) == 1) {\n\t\textern void sweet_early_mark(unsigned int, const char *);\n\t\tsweet_early_mark(393u, \"OK: PID1 pipe created\");\n\t}\n\treturn 0;\n\nfreepipes:"),
+    ]
     # Stage all edits before writing; never silently skip a failed anchor.
     staged = {}
     for rel, pairs in changes.items():
