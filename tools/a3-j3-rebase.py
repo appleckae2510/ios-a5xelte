@@ -150,6 +150,13 @@ def prepare(root):
         ('\tkernel_bootstrap_log("mac_policy_initmach");\n\tmac_policy_initmach();',
          '#if defined(ARM64_BOARD_CONFIG_J3Y17LTE) && !XNU_TARGET_OS_OSX\n\t/* Register built-in policies while the static MAC table is writable. */\n\textern void sweet_amfi_policy_register(void);\n\tsweet_amfi_policy_register();\n#endif\n\tkernel_bootstrap_log("mac_policy_initmach");\n\tmac_policy_initmach();'),
     ]
+    # A3 v0.30: post-root-mount progress markers, no behavior changes.
+    changes["bsd/kern/bsd_init.c"] += [
+        ('\tinit_rootvnode = NULLVP;  /* use rootvnode after this point */', '\tinit_rootvnode = NULLVP;  /* use rootvnode after this point */\n\tsweet_early_mark(377, "A3 root vnode established");'),
+        ('\t\tdevfs_kernel_mount(mounthere);', '\t\tdevfs_kernel_mount(mounthere);\n\t\tsweet_early_mark(378, "A3 devfs mounted");'),
+        ('\tbsd_utaskbootstrap();', '\tbsd_utaskbootstrap();\n\tsweet_early_mark(379, "A3 user task bootstrap returned");'),
+        ('\tload_init_program(p);', '\tsweet_early_mark(380, "A3 entering load_init_program");\n\tload_init_program(p);'),
+    ]
     # Stage all edits before writing; never silently skip a failed anchor.
     staged = {}
     for rel, pairs in changes.items():
