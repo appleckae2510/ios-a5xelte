@@ -251,7 +251,7 @@ def prepare(root):
     # A3 v0.34: separate persistent storage diagnostic line.
     # No new register access, partition writes or root selection changes.
     changes["osfmk/arm64/sweet_early.c"] += [
-        ("stage <= 394u", "stage <= 400u"),
+        ("(stage >= 367u && stage <= 394u)", "(stage >= 367u && stage <= 400u)"),
         ("unsigned int y0 = 440u + row * 16u;",
          "unsigned int y0 = (stage >= 395u && stage <= 400u) ? 424u : 440u + row * 16u;"),
         ("stage == 390u || stage == 392u) ? 0xffff6060u :",
