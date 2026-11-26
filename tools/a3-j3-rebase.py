@@ -310,6 +310,27 @@ def prepare(root):
         ("\tchar *exit_reason_desc = exit_reason_get_string_desc(p->p_exit_reason);",
          "\tchar a3_exit_line[84];\n\textern void sweet_early_mark(unsigned int, const char *);\n\t(void)snprintf(a3_exit_line, sizeof(a3_exit_line), \"EXIT: %.16s pid=%d signal=%d status=%d\", p->p_name, proc_getpid(p), WTERMSIG(rv), WEXITSTATUS(rv));\n\tsweet_early_mark(394u, a3_exit_line);\n\tchar *exit_reason_desc = exit_reason_get_string_desc(p->p_exit_reason);"),
     ]
+    # A3 v0.39: explicit, bounded USERDATA write opt-in. The recovery
+    # inventory gives 11853807 KiB USERDATA and 15388672 KiB total disk.
+    # The candidate start assumes a standard 34-sector end GPT reservation.
+    # Do NOT authorize writes unless live, CRC-checked GPT matches exactly.
+    changes["bsd/dev/j3y17lte_emmc.c"] += [
+        ("/* The J3 GPT extent is not an A3 extent. Compile-only. */\n\tenable_write = 0;",
+         "/* A3: write access must be explicitly requested and verified below. */"),
+        ("emmc_first_lba == 6713344ULL && emmc_nsectors == 24051712ULL",
+         "emmc_first_lba == 7069696ULL && emmc_nsectors == 23707614ULL"),
+        ("\tif (enable_write == 1 && !emmc_writable) {",
+         "\tif (emmc_writable) {\n\t\tuint8_t a3_header[512] = {0};\n\t\tif (emmc_read_sector((uint32_t)(emmc_first_lba + 2u), a3_header) != 0 ||\n\t\t    a3_header[0] != 0x48u || a3_header[1] != 0x58u ||\n\t\t    a3_header[2] != 0u || a3_header[3] != 5u) {\n\t\t\temmc_writable = false;\n\t\t}\n\t}\n\tif (enable_write == 1 && !emmc_writable) {"),
+        ("\t\t*dev = emmc_bdev;", "\t\t*dev = emmc_bdev;") if False else
+        ("\t*dev = emmc_bdev;\n\treturn 0;\n}",
+         "\t*dev = emmc_bdev;\n\treturn 0;\n}\n\nbool\nj3y17lte_emmc_root_writable(dev_t dev)\n{\n\treturn emmc_ready && emmc_writable && dev == emmc_bdev;\n}"),
+    ]
+    # Only the verified eMMC root can become writable; no generic VFS or
+    # filesystem protection changes, and no new raw-write interfaces.
+    changes["bsd/vfs/vfs_subr.c"] = [
+        ('\t\tmp->mnt_devvp = rootvp;\n#if defined(ARM64_BOARD_CONFIG_SWEET)',
+         '\t\tmp->mnt_devvp = rootvp;\n#if defined(ARM64_BOARD_CONFIG_J3Y17LTE)\n\t\t{\n\t\t\textern bool j3y17lte_emmc_root_writable(dev_t);\n\t\t\textern void sweet_early_mark(unsigned int, const char *);\n\t\t\tuint32_t rootrw = 0;\n\t\t\tif (PE_parse_boot_argn("rootrw", &rootrw, sizeof(rootrw)) && rootrw == 1u) {\n\t\t\t\tif (j3y17lte_emmc_root_writable(rootdev)) {\n\t\t\t\t\tmp->mnt_flag &= ~MNT_RDONLY;\n\t\t\t\t\tsweet_early_mark(399u, "USERDATA RW authorized; mounting root");\n\t\t\t\t} else {\n\t\t\t\t\tsweet_early_mark(398u, "RW refused: USERDATA geometry/header mismatch");\n\t\t\t\t}\n\t\t\t}\n\t\t}\n#elif defined(ARM64_BOARD_CONFIG_SWEET)'),
+    ]
     # Stage all edits before writing; never silently skip a failed anchor.
     staged = {}
     for rel, pairs in changes.items():
