@@ -263,6 +263,36 @@ def prepare(root):
         ("void\nj3y17lte_emmc_probe(void)\n{\n\tif (!emmc_map_host()) {\n\t\t(void)emmc_find_root_partition();\n\t}\n}",
          "void\nj3y17lte_emmc_probe(void)\n{\n\textern void sweet_early_mark(unsigned int, const char *);\n\tsweet_early_mark(395u, \"START: eMMC controller probe\");\n\tint error = emmc_map_host();\n\tif (error) {\n\t\tsweet_early_mark(396u, \"ERROR: eMMC controller mapping failed\");\n\t\treturn;\n\t}\n\tsweet_early_mark(397u, \"OK: eMMC mapped; START: read GPT\");\n\terror = emmc_find_root_partition();\n\tsweet_early_mark(error ? 398u : 399u, error ? \"ERROR: eMMC GPT/partition read failed\" : \"OK: eMMC GPT and requested partition found\");\n}"),
     ]
+    # A3 v0.35: inspect only the selected partition's filesystem signature.
+    # Preserve the read-only storage policy and the diagnostic RAM root.
+    fs_probe_old = r'''	sweet_early_mark(error ? 398u : 399u, error ? "ERROR: eMMC GPT/partition read failed" : "OK: eMMC GPT and requested partition found");'''
+    fs_probe_new = r'''	if (error) {
+		sweet_early_mark(398u, "ERROR: eMMC GPT/partition read failed");
+		return;
+	}
+	sweet_early_mark(400u, "START: GPT OK; reading filesystem header");
+	if (emmc_nsectors < 3 || emmc_first_lba > UINT32_MAX - 2u) {
+		sweet_early_mark(398u, "ERROR: partition too small or out of range");
+		return;
+	}
+	uint8_t header[512] = { 0 };
+	error = emmc_read_sector((uint32_t)(emmc_first_lba + 2u), header);
+	if (error) {
+		sweet_early_mark(398u, "ERROR: filesystem header read failed");
+		return;
+	}
+	if (header[0] == 0x48u && header[1] == 0x2bu) {
+		sweet_early_mark(399u, "OK: GPT and HFS+ signature found");
+	} else if (header[0] == 0x48u && header[1] == 0x58u) {
+		sweet_early_mark(399u, "OK: GPT and HFSX signature found");
+	} else if (header[56] == 0x53u && header[57] == 0xefu) {
+		sweet_early_mark(400u, "GPT OK: ext filesystem signature; not HFS+");
+	} else {
+		sweet_early_mark(400u, "GPT OK: filesystem signature unknown");
+	}'''
+    changes["bsd/dev/j3y17lte_emmc.c"] += [
+        (fs_probe_old, fs_probe_new),
+    ]
     # Stage all edits before writing; never silently skip a failed anchor.
     staged = {}
     for rel, pairs in changes.items():
