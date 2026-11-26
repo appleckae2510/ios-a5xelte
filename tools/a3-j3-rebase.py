@@ -248,6 +248,21 @@ def prepare(root):
     changes["bsd/kern/sys_pipe.c"] = [
         ("\tproc_fdunlock(p);\n\treturn 0;\n\nfreepipes:", "\tproc_fdunlock(p);\n\tif (proc_getpid(p) == 1) {\n\t\textern void sweet_early_mark(unsigned int, const char *);\n\t\tsweet_early_mark(393u, \"OK: PID1 pipe created\");\n\t}\n\treturn 0;\n\nfreepipes:"),
     ]
+    # A3 v0.34: separate persistent storage diagnostic line.
+    # No new register access, partition writes or root selection changes.
+    changes["osfmk/arm64/sweet_early.c"] += [
+        ("stage <= 394u", "stage <= 400u"),
+        ("unsigned int y0 = 440u + row * 16u;",
+         "unsigned int y0 = (stage >= 395u && stage <= 400u) ? 424u : 440u + row * 16u;"),
+        ("stage == 390u || stage == 392u) ? 0xffff6060u :",
+         "stage == 390u || stage == 392u || stage == 396u || stage == 398u) ? 0xffff6060u :"),
+        ("stage == 391u || stage == 393u ? 0xff70ff90u",
+         "stage == 391u || stage == 393u || stage == 397u || stage == 399u ? 0xff70ff90u"),
+    ]
+    changes["bsd/dev/j3y17lte_emmc.c"] += [
+        ("void\nj3y17lte_emmc_probe(void)\n{\n\tif (!emmc_map_host()) {\n\t\t(void)emmc_find_root_partition();\n\t}\n}",
+         "void\nj3y17lte_emmc_probe(void)\n{\n\textern void sweet_early_mark(unsigned int, const char *);\n\tsweet_early_mark(395u, \"START: eMMC controller probe\");\n\tint error = emmc_map_host();\n\tif (error) {\n\t\tsweet_early_mark(396u, \"ERROR: eMMC controller mapping failed\");\n\t\treturn;\n\t}\n\tsweet_early_mark(397u, \"OK: eMMC mapped; START: read GPT\");\n\terror = emmc_find_root_partition();\n\tsweet_early_mark(error ? 398u : 399u, error ? \"ERROR: eMMC GPT/partition read failed\" : \"OK: eMMC GPT and requested partition found\");\n}"),
+    ]
     # Stage all edits before writing; never silently skip a failed anchor.
     staged = {}
     for rel, pairs in changes.items():
