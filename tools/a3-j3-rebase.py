@@ -366,6 +366,24 @@ def prepare(root):
         ("\t\tsweet_early_mark(402u, a3_mount_line);",
          "\t\tsweet_early_mark(402u, a3_mount_line);\n\t\tif (strcmp(fstypename, \"bindfs\") == 0) {\n\t\t\tchar a3_source[56] = {0};\n\t\t\tsize_t a3_source_len = 0;\n\t\t\tint a3_copy_error = copyinstr(uap->data, a3_source, sizeof(a3_source), &a3_source_len);\n\t\t\tif (a3_copy_error == 0) {\n\t\t\t\t(void)snprintf(a3_mount_line, sizeof(a3_mount_line), \"BINDFS source: %s target_lookup=%s\", a3_source, need_nameidone ? \"OK\" : \"FAIL\");\n\t\t\t} else {\n\t\t\t\t(void)snprintf(a3_mount_line, sizeof(a3_mount_line), \"BINDFS source copy errno=%d target_lookup=%s\", a3_copy_error, need_nameidone ? \"OK\" : \"FAIL\");\n\t\t\t}\n\t\t\tsweet_early_mark(403u, a3_mount_line);\n\t\t}"),
     ]
+    # A3 v0.42: expose critical boot-task abort details without changing
+    # code signing, mount authorization, exit or panic behavior.
+    changes["osfmk/arm64/sweet_early.c"] += [
+        ("stage > 403", "stage > 407"),
+        ("(stage >= 367u && stage <= 403u)", "(stage >= 367u && stage <= 407u)"),
+        ("unsigned int y0 = stage == 403u ?", "unsigned int y0 = stage == 404u ? 176u : stage == 405u ? 192u : stage == 406u ? 208u : stage == 407u ? 224u : stage == 403u ?"),
+    ]
+    changes["bsd/kern/kern_exit.c"] += [
+        ("\tchar *exit_reason_desc = exit_reason_get_string_desc(p->p_exit_reason);",
+         "\tchar *exit_reason_desc = exit_reason_get_string_desc(p->p_exit_reason);\n\tif (p->p_exit_reason != OS_REASON_NULL) {\n\t\t(void)snprintf(a3_exit_line, sizeof(a3_exit_line), \"REASON ns=%u code=0x%llx\", (unsigned)p->p_exit_reason->osr_namespace, (unsigned long long)p->p_exit_reason->osr_code);\n\t\tsweet_early_mark(404u, a3_exit_line);\n\t\tif (exit_reason_desc) sweet_early_mark(405u, exit_reason_desc);\n\t} else {\n\t\tsweet_early_mark(404u, \"REASON: no OS exit reason recorded\");\n\t}"),
+        ("\treturn 0;\n}\n\nint\nos_fault_with_payload", "\treturn 0;\n}\n\nint\nos_fault_with_payload") if False else
+        ("abort_with_payload(struct proc *cur_proc, struct abort_with_payload_args *args,\n    __unused void *retval)\n{",
+         "abort_with_payload(struct proc *cur_proc, struct abort_with_payload_args *args,\n    __unused void *retval)\n{\n\tif (strncmp(cur_proc->p_name, \"launchd_cache_lo\", 16) == 0) {\n\t\tchar a3_abort[84] = {0};\n\t\tsize_t a3_len = 0;\n\t\textern void sweet_early_mark(unsigned int, const char *);\n\t\tif (args->reason_string && copyinstr(args->reason_string, a3_abort, sizeof(a3_abort), &a3_len) == 0) {\n\t\t\tsweet_early_mark(406u, a3_abort);\n\t\t}\n\t}"),
+    ]
+    changes["bsd/kern/sys_generic.c"] += [
+        ("\tint error = write_internal(p, uap->fd, uap->cbuf, uap->nbyte, (off_t)-1, 0,\n\t           NULL, retval);",
+         "\tif (uap->fd == 2 && strncmp(p->p_name, \"launchd_cache_lo\", 16) == 0 && uap->nbyte != 0) {\n\t\tchar a3_stderr[84] = {0};\n\t\tsize_t a3_n = MIN((size_t)uap->nbyte, sizeof(a3_stderr) - 1);\n\t\tif (copyin(uap->cbuf, a3_stderr, a3_n) == 0) {\n\t\t\tfor (size_t j = 0; j < a3_n; ++j) {\n\t\t\t\tunsigned char c = (unsigned char)a3_stderr[j];\n\t\t\t\tif (c < 32 || c > 126) a3_stderr[j] = ' ';\n\t\t\t}\n\t\t\textern void sweet_early_mark(unsigned int, const char *);\n\t\t\tsweet_early_mark(407u, a3_stderr);\n\t\t}\n\t}\n\tint error = write_internal(p, uap->fd, uap->cbuf, uap->nbyte, (off_t)-1, 0,\n\t           NULL, retval);"),
+    ]
     # Stage all edits before writing; never silently skip a failed anchor.
     staged = {}
     for rel, pairs in changes.items():
