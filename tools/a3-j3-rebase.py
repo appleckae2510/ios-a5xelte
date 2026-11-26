@@ -293,6 +293,23 @@ def prepare(root):
     changes["bsd/dev/j3y17lte_emmc.c"] += [
         (fs_probe_old, fs_probe_new),
     ]
+    # A3 v0.38: record critical process exit details before coredump/panic.
+    # Preserve the normal process-exit and security behavior.
+    # Two fixed rows within the existing 2 MiB framebuffer mapping
+    # (720*4*712 = 2050560 bytes); outside the existing stage grid.
+    changes["osfmk/arm64/sweet_early.c"] += [
+        ("unsigned int y0 = (stage >= 395u && stage <= 400u) ? 424u : 440u + row * 16u;",
+         "unsigned int y0 = stage == 394u ? 696u : (stage == 388u ? 680u : ((stage >= 395u && stage <= 400u) ? 424u : 440u + row * 16u));"),
+        ("stage == 396u || stage == 398u) ? 0xffff6060u :",
+         "stage == 396u || stage == 398u || stage == 394u) ? 0xffff6060u :"),
+    ]
+    changes["bsd/kern/kern_prot.c"] += [
+        ('"OK: PID1 running in diagnostic userland"', '"OK: PID1 executed getpid syscall"'),
+    ]
+    changes["bsd/kern/kern_exit.c"] = [
+        ("\tchar *exit_reason_desc = exit_reason_get_string_desc(p->p_exit_reason);",
+         "\tchar a3_exit_line[84];\n\textern void sweet_early_mark(unsigned int, const char *);\n\t(void)snprintf(a3_exit_line, sizeof(a3_exit_line), \"EXIT: %.16s pid=%d signal=%d status=%d\", p->p_name, proc_getpid(p), WTERMSIG(rv), WEXITSTATUS(rv));\n\tsweet_early_mark(394u, a3_exit_line);\n\tchar *exit_reason_desc = exit_reason_get_string_desc(p->p_exit_reason);"),
+    ]
     # Stage all edits before writing; never silently skip a failed anchor.
     staged = {}
     for rel, pairs in changes.items():
