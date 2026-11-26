@@ -44,6 +44,25 @@ def prepare(root):
         "bsd/dev/j3y17lte_emmc.c": [
             ('(void)PE_parse_boot_argn("emmcwrite", &enable_write, sizeof(enable_write));', '(void)PE_parse_boot_argn("emmcwrite", &enable_write, sizeof(enable_write));\n\t/* The J3 GPT extent is not an A3 extent. Compile-only. */\n\tenable_write = 0;'),
         ],
+        # A3 initial VM ownership is the existing loader's verified single
+        # contiguous staging range, not the J3 donor's two-bank aperture.
+        "osfmk/arm/arm_init.c": [
+            ("\tconst_boot_args = *args;\n", "\tconst_boot_args = *args;\n\t/* A3 bootstrap: refuse memory outside the existing loader window. */\n\tif (const_boot_args.physBase != 0x92000000ULL ||\n\t    const_boot_args.memSize == 0 || const_boot_args.memSize > 0x1c000000ULL ||\n\t    (const_boot_args.memSize & 0xfffULL) != 0 ||\n\t    const_boot_args.topOfKernelData < const_boot_args.physBase ||\n\t    const_boot_args.topOfKernelData - const_boot_args.physBase >= const_boot_args.memSize) {\n\t\tpanic(\"A3 RAM: invalid loader memory window\");\n\t}\n"),
+        ],
+        "osfmk/arm/pmap/pmap_data.c": [
+            ("const vm_size_t j3_pmap_metadata_span = 0x80000000ULL;", "const vm_size_t j3_pmap_metadata_span = mem_size; /* A3: only loader-managed pages */"),
+        ],
+        "osfmk/arm/pmap/pmap_data.h": [
+            ("0x7e800000ULL", "0x7e400000ULL"),
+            ("return j3y17lte_upper_ram_online &&\n\t    (pa >= 0x80000000ULL) && (pa < 0xc0000000ULL);", "return false; /* A3: no unverified late RAM ownership */"),
+        ],
+        "osfmk/arm/pmap/pmap.c": [
+            ("#define J3_RAM_HOLE_START ((pmap_paddr_t)0x7e800000ULL)", "#define J3_RAM_HOLE_START ((pmap_paddr_t)0x7e400000ULL)"),
+        ],
+        "osfmk/mach/arm/vm_param.h": [
+            ("#define isphysmem(a)            (((((vm_address_t)(a) - gPhysBase) < gPhysSize) && \\\n\t!(((uint64_t)(a) >= 0x7e800000ULL) && ((uint64_t)(a) < 0x80000000ULL))) || \\\n\t(((uint64_t)(a) >= 0x80000000ULL) && ((uint64_t)(a) < 0xc0000000ULL)))", "#define isphysmem(a)            (((vm_address_t)(a) - gPhysBase) < gPhysSize) /* A3: managed RAM only */"),
+            ("((uint64_t)(addr) < 0x7e800000ULL)", "((uint64_t)(addr) < 0x7e400000ULL)"),
+        ],
         "osfmk/vm/vm_init.c": [
             ("if (j3y17lte_bank1_hotadd_enabled) {", "j3y17lte_bank1_hotadd_enabled = false; /* A3 reserved-memory map not yet wired */\n\tif (j3y17lte_bank1_hotadd_enabled) {"),
         ],
