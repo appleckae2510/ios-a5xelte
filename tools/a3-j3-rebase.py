@@ -138,6 +138,18 @@ def prepare(root):
         ("\tj3y17lte_prepare_smp_pmu();\n\tj3y17lte_enable_smp_coherency();",
          "\t/* A3 single-core bring-up: no Exynos7570 PMU accesses. */\n\tif (ml_get_topology_info()->num_cpus != 1) {\n\t\tpanic(\"A3: SMP PMU not validated; require single CPU\");\n\t}\n\tj3y17lte_enable_smp_coherency();"),
     ]
+    # A3 v0.29: iPhoneOS has a static MAC policy table in __DATA_CONST.
+    # Register existing built-in providers before machine_lockdown(), using
+    # the normal MAC lifecycle. Do not change the policy callbacks or page
+    # permissions. Keep other donor targets on their original path.
+    changes["bsd/kern/bsd_init.c"] = [
+        ('#if defined(ARM64_BOARD_CONFIG_SWEET) || defined(ARM64_BOARD_CONFIG_J3Y17LTE)\n\t/* AMFI\'s MAC policy is built in on SWEET (bsd/kern/sweet_amfi.c). */\n\textern void sweet_amfi_policy_register(void);\n\tsweet_amfi_policy_register();\n#endif',
+         '#if defined(ARM64_BOARD_CONFIG_SWEET) && !defined(ARM64_BOARD_CONFIG_J3Y17LTE)\n\t/* Original SWEET path. A3 uses pre-lockdown registration. */\n\textern void sweet_amfi_policy_register(void);\n\tsweet_amfi_policy_register();\n#endif'),
+    ]
+    changes["osfmk/kern/startup.c"] = [
+        ('\tkernel_bootstrap_log("mac_policy_initmach");\n\tmac_policy_initmach();',
+         '#if defined(ARM64_BOARD_CONFIG_J3Y17LTE) && !XNU_TARGET_OS_OSX\n\t/* Register built-in policies while the static MAC table is writable. */\n\textern void sweet_amfi_policy_register(void);\n\tsweet_amfi_policy_register();\n#endif\n\tkernel_bootstrap_log("mac_policy_initmach");\n\tmac_policy_initmach();'),
+    ]
     # Stage all edits before writing; never silently skip a failed anchor.
     staged = {}
     for rel, pairs in changes.items():
