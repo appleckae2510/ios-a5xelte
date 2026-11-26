@@ -157,6 +157,20 @@ def prepare(root):
         ('\tbsd_utaskbootstrap();', '\tbsd_utaskbootstrap();\n\tsweet_early_mark(379, "A3 user task bootstrap returned");'),
         ('\tload_init_program(p);', '\tsweet_early_mark(380, "A3 entering load_init_program");\n\tload_init_program(p);'),
     ]
+    # A3 v0.31: distinguish an exec attempt from a successful PID1 syscall.
+    # Preserve the normal exec, validation, and error paths.
+    changes["osfmk/arm64/sweet_early.c"] += [
+        ("stage > 380", "stage > 400"),
+        ("\t\tmarker_stage = stage - 361;\n\t\tmarker_y = 500u;", "\t\tif (stage <= 380u) {\n\t\t\tmarker_stage = stage - 361;\n\t\t\tmarker_y = 500u;\n\t\t} else {\n\t\t\tmarker_stage = stage - 381;\n\t\t\tmarker_y = 488u;\n\t\t}"),
+    ]
+    changes["bsd/kern/kern_exec.c"] = [
+        ("load_init_program(proc_t p)\n{", "load_init_program(proc_t p)\n{\n\textern void sweet_early_mark(unsigned int, const char *);\n\tsweet_early_mark(381, \"A3 entered init loader\");"),
+        ("\t(void) mach_vm_allocate_kernel(map, &scratch_addr, map_page_size, VM_FLAGS_ANYWHERE, VM_KERN_MEMORY_NONE);", "\t(void) mach_vm_allocate_kernel(map, &scratch_addr, map_page_size, VM_FLAGS_ANYWHERE, VM_KERN_MEMORY_NONE);\n\tsweet_early_mark(382, \"A3 init scratch allocation returned\");"),
+        ("\treturn execve(p, &init_exec_args, retval);", "\textern void sweet_early_mark(unsigned int, const char *);\n\tsweet_early_mark(383, \"A3 invoking initial execve\");\n\terror = execve(p, &init_exec_args, retval);\n\tsweet_early_mark(error == 0 ? 384u : 385u, \"A3 initial execve result\");\n\treturn error;"),
+    ]
+    changes["bsd/kern/kern_prot.c"] = [
+        ("getpid(proc_t p, __unused struct getpid_args *uap, int32_t *retval)\n{\n\t*retval = proc_getpid(p);", "getpid(proc_t p, __unused struct getpid_args *uap, int32_t *retval)\n{\n\t*retval = proc_getpid(p);\n\tif (*retval == 1) {\n\t\tstatic bool marked;\n\t\tif (!marked) {\n\t\t\tmarked = true;\n\t\t\textern void sweet_early_mark(unsigned int, const char *);\n\t\t\tsweet_early_mark(386, \"A3 PID1 executed getpid syscall\");\n\t\t}\n\t}"),
+    ]
     # Stage all edits before writing; never silently skip a failed anchor.
     staged = {}
     for rel, pairs in changes.items():
