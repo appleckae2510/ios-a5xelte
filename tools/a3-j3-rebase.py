@@ -131,6 +131,13 @@ def prepare(root):
 
 '''
     changes["osfmk/arm64/sweet_early.c"] = [(panic_anchor, exception_diag + panic_anchor)]
+    # A3 v0.28: v0.27 fault PC resolves to the first read of the
+    # Exynos7570 PMU in j3y17lte_prepare_smp_pmu. Do not touch the donor
+    # PMU on the Exynos7870. Keep coherency and the normal CPU handshake.
+    changes["iokit/Kernel/arm/SweetCPU.cpp"] = [
+        ("\tj3y17lte_prepare_smp_pmu();\n\tj3y17lte_enable_smp_coherency();",
+         "\t/* A3 single-core bring-up: no Exynos7570 PMU accesses. */\n\tif (ml_get_topology_info()->num_cpus != 1) {\n\t\tpanic(\"A3: SMP PMU not validated; require single CPU\");\n\t}\n\tj3y17lte_enable_smp_coherency();"),
+    ]
     # Stage all edits before writing; never silently skip a failed anchor.
     staged = {}
     for rel, pairs in changes.items():
